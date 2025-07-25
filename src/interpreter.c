@@ -9,8 +9,6 @@
 #include <string.h>
 #include <math.h>
 
-Scope* curr_scope;
-
 static bool is_number(const Evaluation* e) {
   return e->type == EVAL_TYPE_DOUBLE;
 }
@@ -197,7 +195,7 @@ static Evaluation evaluate_expression_assignment(Expression* expr) {
   Evaluation rhs = evaluate_expression(expr->assignment.right);
   StringView lexeme = expr->assignment.name.lexeme;
 
-  if (!scope_replace(curr_scope, lexeme, &rhs)) {
+  if (!scope_replace(lexeme, &rhs)) {
     runtime_error(&expr->assignment.name, "Assignement failed. Variable must be declared with the 'var' keyword first"); 
     Evaluation e = {EVAL_TYPE_ERR};
     return e;
@@ -222,7 +220,7 @@ static Evaluation evaluate_expression(Expression* expr) {
         case TOKEN_TYPE_NUMBER:
           return evaluate_expression_literal_double(expr);
         case TOKEN_TYPE_IDENTIFIER: {
-          Evaluation* val = scope_get_val(curr_scope, expr->literal.lexeme);
+          Evaluation* val = scope_get_val(expr->literal.lexeme);
           if (val == NULL) {
             StringView lexeme = expr->literal.lexeme;
             runtime_error(NULL, "Unresolved identifier: %.*s", lexeme.len, lexeme.str);
@@ -282,19 +280,15 @@ static void evaluate_statement_print(Statement* stmt) {
 
 static void evaluate_statement_var_decl(Statement* stmt) {
   Evaluation e = evaluate_expression(stmt->var_decl.expr);
-  scope_insert(curr_scope, stmt->var_decl.identifier, &e);
+  scope_insert(stmt->var_decl.identifier, &e);
 }
 
 static void evaluate_statement_block(Statement* stmt) {
-  curr_scope = scope_new(curr_scope);
-
-  for (size_t i = 0; i < stmt->block.num_stmts; ++i) {
-    evaluate_statement(stmt->block.stmts[i]);   
-  }
-
-  Scope* old = curr_scope;
-  curr_scope = curr_scope->upper;
-  scope_free(old);
+  scope_new();
+    for (size_t i = 0; i < stmt->block.num_stmts; ++i) {
+      evaluate_statement(stmt->block.stmts[i]);   
+    }
+  scope_pop();
 }
 
 static void evaluate_statement_conditional(Statement* stmt) {
@@ -360,7 +354,8 @@ void evaluation_pretty_print(Evaluation* e) {
 }
 
 void interpret(Statements stmts) {
-  curr_scope = scope_new(NULL);
+  scope_new();
+
   for (size_t i = 0; i < stmts.num_stmts; ++i) {
     evaluate_statement(stmts.stmts[i]);
   }
