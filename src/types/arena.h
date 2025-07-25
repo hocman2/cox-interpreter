@@ -10,6 +10,7 @@ typedef struct {
   void* buf;
   size_t buf_sz;
   uintptr_t offset;
+  size_t last_alloc_sz;
 } Arena;
 
 static uintptr_t align_up(size_t al, uintptr_t a) {
@@ -24,20 +25,36 @@ static Arena arena_init(size_t buf_sz, size_t align) {
   a.buf_sz = buf_sz;
   a.offset = 0;
   a.align = align;
+  a.last_alloc_sz = 0;
   return a;
 }
 
 static void* arena_alloc(Arena* a, size_t sz) {
+  uintptr_t curr_end = (uintptr_t)a->buf + a->offset;
+  uintptr_t aligned = align_up(a->align, curr_end);
+
+  size_t total_alloc_sz = (size_t)(aligned - curr_end + sz);
+  
   // Alloc wont fit !
-  if (a->offset+sz > a->buf_sz) {
-    fprintf(stderr, "Arena allocator: Out of memory !");
-    exit(-1);
-    //return NULL;
+  if (a->offset+total_alloc_sz > a->buf_sz) {
+    fprintf(stderr, "Arena allocator: Out of memory !\n");
+    return NULL;
   }
 
-  uintptr_t ret = (uintptr_t)a->buf + a->offset; 
-  a->offset += sz;
-  return (void*)ret;
+  if (a->offset + total_alloc_sz < a->offset) {
+    fprintf(stderr, "Arena allocator: size overflow !\n");
+    return NULL;
+  }
+
+  a->offset += total_alloc_sz;
+  a->last_alloc_sz = total_alloc_sz;
+
+  return (void*)aligned;
+}
+
+/// Reverses the last allocation, making the data writable again
+static void arena_pop(Arena* a, size_t sz) {
+  a->offset -= a->last_alloc_sz;
 }
 
 static void arena_reset(Arena* a) {

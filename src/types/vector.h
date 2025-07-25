@@ -2,6 +2,7 @@
 #define _VECTOR_H
 
 #include <stdlib.h>
+#include <string.h>
 
 // simple ugly dynamic array struct, not meant to be optimized
 
@@ -25,7 +26,7 @@ static Vector vector_new(size_t initial_cap, size_t type_sz) {
   return v;
 }
 
-static void vector_push(Vector* v, void* el) {
+static void* vector_push(Vector* v, void* el) {
   if (v->num_els == v->_cap) {
     v->_cap *= 2;
     v->els = realloc(v->els, v->_type_sz * v->_cap);
@@ -34,10 +35,16 @@ static void vector_push(Vector* v, void* el) {
   void* insertion_loc = v->els + (v->num_els * v->_type_sz);
   memcpy(insertion_loc, el, v->_type_sz);
   v->num_els += 1;
+
+  return insertion_loc;
 }
 
 static void vector_pop(Vector* v) {
   v->num_els -= 1;
+}
+
+static void vector_free(Vector* v) {
+  free(v->els);
 }
 
 #endif
