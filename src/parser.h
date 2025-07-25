@@ -52,6 +52,7 @@ enum StatementType {
   STATEMENT_VAR_DECL,
   STATEMENT_BLOCK,
   STATEMENT_CONDITIONAL,
+  STATEMENT_WHILE,
 };
 
 typedef struct Statement Statement;
@@ -80,6 +81,11 @@ struct StatementConditional {
   Vector condblocks;
 };
 
+struct StatementWhile {
+  Expression* condition;
+  Statement* body;
+};
+
 struct Statement {
   enum StatementType type;
   union {
@@ -87,6 +93,7 @@ struct Statement {
     struct StatementVarDecl var_decl;
     StatementBlock block;
     struct StatementConditional cond;
+    struct StatementWhile while_loop;
   };
 };
 

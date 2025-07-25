@@ -1,13 +1,5 @@
 var a = 0;
-var b = 10;
-
-if false {
-  print "a: ";
+while (a < 10) {
   print a;
-} else {
-  var c = 5;
-  print "b: ";
-  print b;
-  print "c: ";
-  print c;
+  a = a + 1;
 }

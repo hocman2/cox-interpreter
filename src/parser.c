@@ -455,6 +455,14 @@ static Statement* parse_statement_conditional(struct TokensCursor* cursor) {
   return s;
 }
 
+static Statement* parse_statement_while(struct TokensCursor* cursor) {
+  Statement* s = arena_alloc(&parser.alloc, sizeof(Statement));
+  s->type = STATEMENT_WHILE;
+  s->while_loop.condition = parse_expression(cursor);
+  s->while_loop.body = parse_statement(cursor);
+  return s;
+}
+
 static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
   Token* t = token_at(cursor);
   switch(t->type) {
@@ -470,6 +478,8 @@ static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
         case RESERVED_KEYWORD_ELSE:
           syntax_error(token_at(cursor), "else statement must follow an if block");
           set_panic(cursor);
+        case RESERVED_KEYWORD_WHILE:
+          return parse_statement_while(advance(cursor));
         default:
         break;
       }
@@ -559,6 +569,11 @@ void expression_pretty_print(Expression* expr) {
       expression_pretty_print(expr->binary.right);
       printf(")");
       break;
+    case EXPRESSION_ASSIGNMENT:
+      printf("(= "SV_Fmt" ", SV_Fmt_arg(expr->assignment.name.lexeme));
+      expression_pretty_print(expr->assignment.right);
+      printf(")");
+    break;
     default:
       break;
   }
@@ -604,9 +619,20 @@ void statement_pretty_print(Statement* stmt) {
         struct ConditionalBlock* b = ((struct ConditionalBlock*)v->els) + i;
         printf("\tCondition: ");
         expression_pretty_print(b->condition);
+        printf("\n");
         printf("\tBranch: ");
         statement_pretty_print(b->branch);
+        printf("\n");
       }
+    break;
+    case STATEMENT_WHILE:
+      printf("STATEMENT WHILE: \n");
+      printf("\tCondition: ");
+      expression_pretty_print(stmt->while_loop.condition);
+      printf("\n");
+      printf("\tBody: ");
+      statement_pretty_print(stmt->while_loop.body);
+      printf("\n");
     break;
   }
 }

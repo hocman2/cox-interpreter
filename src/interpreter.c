@@ -316,6 +316,28 @@ static void evaluate_statement_conditional(Statement* stmt) {
   }
 }
 
+static void evaluate_statement_while(Statement* stmt) {
+  Evaluation e = evaluate_expression(stmt->while_loop.condition);
+  if (!is_bool_convertable(&e)) {
+    runtime_error(NULL, "While statement's condition doesn't evaluate to bool");
+    return;
+  }
+
+  bool iterate = as_bool(&e);
+  while (iterate) {
+    evaluate_statement(stmt->while_loop.body);
+    e = evaluate_expression(stmt->while_loop.condition);
+    
+    // i believe it's necessary because variables might change type
+    if (!is_bool_convertable(&e)) {
+      runtime_error(NULL, "While statement's condition doesn't evaluate to bool");
+      return;
+    }
+
+    iterate = as_bool(&e);
+  }
+}
+
 static void evaluate_statement(Statement* stmt) {
   switch (stmt->type) {
     case STATEMENT_EXPR:
@@ -332,6 +354,9 @@ static void evaluate_statement(Statement* stmt) {
     break;
     case STATEMENT_CONDITIONAL:
       evaluate_statement_conditional(stmt);
+    break;
+    case STATEMENT_WHILE:
+      evaluate_statement_while(stmt);
     break;
   }
 }
