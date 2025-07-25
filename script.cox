@@ -1,0 +1,13 @@
+var a = 0;
+var b = 10;
+
+if false {
+  print "a: ";
+  print a;
+} else {
+  var c = 5;
+  print "b: ";
+  print b;
+  print "c: ";
+  print c;
+}
