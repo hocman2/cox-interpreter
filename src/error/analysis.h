@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <assert.h>
 
 #include "../types/token.h"
 
@@ -53,6 +54,7 @@ static void internal_logic_error(Token* t, const char* msg, ...) {
   va_start(args, msg);
   _analysis_error_internal(t, ANAL_ERROR_INTERNAL_LOGIC, msg, args);
   va_end(args);
+  assert(false);
 }
 
 #endif
