@@ -9,33 +9,6 @@
 #include <string.h>
 #include <math.h>
 
-static bool is_number(const Evaluation* e) {
-  return e->type == EVAL_TYPE_DOUBLE;
-}
-
-static bool is_bool_convertable(const Evaluation* e) {
-  switch (e->type) {
-    case EVAL_TYPE_ERR:
-      return false;
-    default:
-      return true;
-  }
-}
-
-static bool as_bool(const Evaluation* e) {
-  switch (e->type) {
-    case EVAL_TYPE_DOUBLE:
-      return e->dvalue > 0;
-    case EVAL_TYPE_STRING_VIEW:
-      return e->svvalue.len > 0;
-    case EVAL_TYPE_BOOL:
-      return e->bvalue;
-    case EVAL_TYPE_ERR:
-      // shut down warning, this is actually wrong but should be unreachable
-      return false;
-  }
-}
-
 static Evaluation evaluate_expression(Expression* expr);
 
 static Evaluation evaluate_expression_literal_string(Expression* expr) {
@@ -83,18 +56,20 @@ static Evaluation evaluate_expression_unary(Expression* expr) {
   Evaluation right = evaluate_expression(expr->unary.child);
   switch (expr->unary.operator.type) {
     case TOKEN_TYPE_MINUS:
-      if (!is_number(&right)) {
+      if (!convert_to(&right, EVAL_TYPE_DOUBLE)) {
         runtime_error(find_token(expr->unary.child), "Unary operation not permitted: operand is not a number");
         Evaluation e = {EVAL_TYPE_ERR};
         return e;
       }
+
       e.type = EVAL_TYPE_DOUBLE;
       e.dvalue = -right.dvalue;
     break;
 
     case TOKEN_TYPE_BANG:
       e.type = EVAL_TYPE_BOOL;
-      e.bvalue = !as_bool(&right);
+      convert_to(&right, EVAL_TYPE_BOOL);
+      e.bvalue = !right.bvalue;
     break;
 
     default:
@@ -106,29 +81,38 @@ static Evaluation evaluate_expression_unary(Expression* expr) {
   return e;
 }
 
+static Evaluation binary_eval_member(Expression* expr, bool eval_left, enum EvalType expected_type) {
+  Expression* to_eval = (eval_left) ? expr->binary.left : expr->binary.right;
+  Evaluation eval = evaluate_expression(to_eval);
+
+  if (!convert_to(&eval, expected_type)) {
+    runtime_error(
+      find_token(to_eval),
+      "Binary operation not permitted: %s operand is not convertible to %s",
+      (eval_left) ? "left" : "right", eval_type_to_str(expected_type)
+    );
+
+    Evaluation e = {EVAL_TYPE_ERR};
+    return e;
+  }
+
+  return eval;
+}
+
 static Evaluation evaluate_expression_binary(Expression* expr) {
   assert(expr->type == EXPRESSION_BINARY);
+
   Evaluation e;
 
-  Evaluation left = evaluate_expression(expr->binary.left);
-  Evaluation right = evaluate_expression(expr->binary.right);
-
-  if (!is_number(&left)) {
-    runtime_error(find_token(expr->binary.left), "Binary operation not permitted: left operand is not a number");
-    Evaluation e = {EVAL_TYPE_ERR};
-    return e;
-  }
-  if (!is_number(&right)) {
-    runtime_error(find_token(expr->binary.right), "Binary operation not permitted: right operand is not a number");
-    Evaluation e = {EVAL_TYPE_ERR};
-    return e;
-  }
-
   switch (expr->binary.operator.type) {
+    // Arithmetic operators evaluation
     case TOKEN_TYPE_PLUS:
     case TOKEN_TYPE_MINUS:
     case TOKEN_TYPE_STAR:
-    case TOKEN_TYPE_SLASH:
+    case TOKEN_TYPE_SLASH: {
+      Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_DOUBLE);
+      Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_DOUBLE);
+
       e.type = EVAL_TYPE_DOUBLE;
       switch (expr->binary.operator.type) {
         case TOKEN_TYPE_PLUS:
@@ -148,16 +132,21 @@ static Evaluation evaluate_expression_binary(Expression* expr) {
           }
           break;
         default:
-        break;
+          break;
       }
+    }
       break;
 
+    // Comparison operators evaluation
     case TOKEN_TYPE_LESS:
     case TOKEN_TYPE_LESS_EQUAL:
     case TOKEN_TYPE_GREATER:
     case TOKEN_TYPE_GREATER_EQUAL:
     case TOKEN_TYPE_EQUAL_EQUAL:
-    case TOKEN_TYPE_BANG_EQUAL:
+    case TOKEN_TYPE_BANG_EQUAL: {
+      Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_DOUBLE);
+      Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_DOUBLE);
+
       e.type = EVAL_TYPE_BOOL;
       switch (expr->binary.operator.type) {
         case TOKEN_TYPE_LESS:
@@ -180,6 +169,38 @@ static Evaluation evaluate_expression_binary(Expression* expr) {
         break;
         default:
         break;
+      }
+    }
+      break;
+
+    case TOKEN_TYPE_KEYWORD:
+      // Logic operator evaluations
+      e.type = EVAL_TYPE_BOOL;
+      switch (expr->binary.operator.keyword) {
+        case RESERVED_KEYWORD_OR: {
+          Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_BOOL);
+          if (left.bvalue) {
+            e.bvalue = true;
+          } else {
+            Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_BOOL);
+            e.bvalue = right.bvalue;
+          }
+        }
+          break;
+          
+        case RESERVED_KEYWORD_AND: {
+          Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_BOOL);
+          if (!left.bvalue) {
+            e.bvalue = false;
+          } else {
+            Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_BOOL);
+            e.bvalue = right.bvalue;
+          }
+        }
+          break;
+        default:
+          fprintf(stderr, "Error binary expr with unrecognized keyword type");
+          exit(1);
       }
       break;
 
@@ -304,12 +325,12 @@ static void evaluate_statement_conditional(Statement* stmt) {
     }
 
     Evaluation e = evaluate_expression(condition);
-    if (!is_bool_convertable(&e)) {
+    if (!convert_to(&e, EVAL_TYPE_BOOL)) {
       runtime_error(NULL, "If statement condition can't be evaluated as boolean");
       exit(1);
     }
 
-    if(as_bool(&e)) {
+    if(e.bvalue) {
       evaluate_statement(b->branch);
       return;
     }
@@ -318,23 +339,20 @@ static void evaluate_statement_conditional(Statement* stmt) {
 
 static void evaluate_statement_while(Statement* stmt) {
   Evaluation e = evaluate_expression(stmt->while_loop.condition);
-  if (!is_bool_convertable(&e)) {
-    runtime_error(NULL, "While statement's condition doesn't evaluate to bool");
-    return;
-  }
 
-  bool iterate = as_bool(&e);
+  if (!convert_to(&e, EVAL_TYPE_BOOL))
+    return;
+
+  bool iterate = e.bvalue;
   while (iterate) {
     evaluate_statement(stmt->while_loop.body);
     e = evaluate_expression(stmt->while_loop.condition);
     
     // i believe it's necessary because variables might change type
-    if (!is_bool_convertable(&e)) {
-      runtime_error(NULL, "While statement's condition doesn't evaluate to bool");
+    if (!convert_to(&e, EVAL_TYPE_BOOL))
       return;
-    }
 
-    iterate = as_bool(&e);
+    iterate = e.bvalue;
   }
 }
 
