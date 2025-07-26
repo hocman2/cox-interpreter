@@ -350,8 +350,40 @@ static Expression* parse_equality(struct TokensCursor* cursor) {
   return expr;
 }
 
-static Expression* parse_assignment(struct TokensCursor* cursor) {
+static Expression* parse_logical_and(struct TokensCursor* cursor) {
   Expression* expr = parse_equality(cursor);
+  
+  while (is_keyword(cursor, RESERVED_KEYWORD_AND)) {
+    Expression* bin = arena_alloc(&parser.alloc, sizeof(Expression));
+    bin->type = EXPRESSION_BINARY;
+    bin->binary.operator = *token_at(cursor);
+    bin->binary.left = expr;
+    bin->binary.right = parse_equality(advance(cursor));
+
+    expr = bin;
+  }
+
+  return expr;
+}
+
+static Expression* parse_logical_or(struct TokensCursor* cursor) {
+  Expression* expr = parse_logical_and(cursor);
+  
+  while (is_keyword(cursor, RESERVED_KEYWORD_OR)) {
+    Expression* bin = arena_alloc(&parser.alloc, sizeof(Expression));
+    bin->type = EXPRESSION_BINARY;
+    bin->binary.operator = *token_at(cursor);
+    bin->binary.left = expr;
+    bin->binary.right = parse_logical_and(advance(cursor));
+
+    expr = bin;
+  }
+
+  return expr;
+}
+
+static Expression* parse_assignment(struct TokensCursor* cursor) {
+  Expression* expr = parse_logical_or(cursor);
 
   Token* t = token_at(cursor);
   if (t->type == TOKEN_TYPE_EQUAL) {
