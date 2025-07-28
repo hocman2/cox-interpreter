@@ -53,6 +53,7 @@ enum StatementType {
   STATEMENT_BLOCK,
   STATEMENT_CONDITIONAL,
   STATEMENT_WHILE,
+  STATEMENT_FOR,
 };
 
 typedef struct Statement Statement;
@@ -86,6 +87,13 @@ struct StatementWhile {
   Statement* body;
 };
 
+struct StatementFor {
+  Statement* init;
+  Expression* condition;
+  Expression* post_iteration;
+  Statement* body;
+};
+
 struct Statement {
   enum StatementType type;
   union {
@@ -94,6 +102,7 @@ struct Statement {
     StatementBlock block;
     struct StatementConditional cond;
     struct StatementWhile while_loop;
+    struct StatementFor for_loop;
   };
 };
 

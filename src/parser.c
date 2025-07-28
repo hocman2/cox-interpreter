@@ -495,6 +495,34 @@ static Statement* parse_statement_while(struct TokensCursor* cursor) {
   return s;
 }
 
+static Statement* parse_statement_for(struct TokensCursor* cursor) {
+  Statement* s = arena_alloc(&parser.alloc, sizeof(Statement));
+  s->type = STATEMENT_FOR;
+
+  consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Missing opening parentheses next to 'for' keyword");
+
+  if (token_at(cursor)->type != TOKEN_TYPE_SEMICOLON) {
+    s->for_loop.init = is_keyword(cursor, RESERVED_KEYWORD_VAR) ? parse_statement_var_decl(cursor) : parse_statement_expr(cursor);
+  } else {
+    s->for_loop.init = NULL;
+  }
+
+  s->for_loop.condition = (token_at(cursor)->type == TOKEN_TYPE_SEMICOLON) ?
+    NULL :
+    parse_expression(cursor);
+  consume(cursor, TOKEN_TYPE_SEMICOLON, "Expect ';' after expression");
+
+  s->for_loop.post_iteration = (token_at(cursor)->type == TOKEN_TYPE_SEMICOLON) ?
+    NULL :
+    parse_expression(cursor);
+
+  consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Missing closing parentheses after 'for' declaration");
+
+  s->for_loop.body = parse_statement(cursor); 
+
+  return s;
+}
+
 static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
   Token* t = token_at(cursor);
   switch(t->type) {
@@ -512,6 +540,8 @@ static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
           set_panic(cursor);
         case RESERVED_KEYWORD_WHILE:
           return parse_statement_while(advance(cursor));
+        case RESERVED_KEYWORD_FOR:
+          return parse_statement_for(advance(cursor));
         default:
         break;
       }
@@ -664,6 +694,18 @@ void statement_pretty_print(Statement* stmt) {
       printf("\n");
       printf("\tBody: ");
       statement_pretty_print(stmt->while_loop.body);
+      printf("\n");
+    break;
+    case STATEMENT_FOR:
+      printf("STATEMENT FOR: \n");
+      printf("\tInitialization: ");
+      statement_pretty_print(stmt->for_loop.init);
+      printf("\tCondition: ");
+      expression_pretty_print(stmt->for_loop.condition);
+      printf("\n\tPost-iteration: ");
+      expression_pretty_print(stmt->for_loop.post_iteration);
+      printf("\n\tBody: ");
+      statement_pretty_print(stmt->for_loop.body);
       printf("\n");
     break;
   }

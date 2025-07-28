@@ -340,8 +340,10 @@ static void evaluate_statement_conditional(Statement* stmt) {
 static void evaluate_statement_while(Statement* stmt) {
   Evaluation e = evaluate_expression(stmt->while_loop.condition);
 
-  if (!convert_to(&e, EVAL_TYPE_BOOL))
+  if (!convert_to(&e, EVAL_TYPE_BOOL)) {
+    runtime_error(NULL, "While loop condition does not evaluate to bool");
     return;
+  }
 
   bool iterate = e.bvalue;
   while (iterate) {
@@ -349,11 +351,42 @@ static void evaluate_statement_while(Statement* stmt) {
     e = evaluate_expression(stmt->while_loop.condition);
     
     // i believe it's necessary because variables might change type
-    if (!convert_to(&e, EVAL_TYPE_BOOL))
+    if (!convert_to(&e, EVAL_TYPE_BOOL)) {
+      runtime_error(NULL, "While loop condition does not evaluate to bool");
       return;
+    }
 
     iterate = e.bvalue;
   }
+}
+
+static void evaluate_statement_for(Statement* stmt) {
+  scope_new();
+  if (stmt->for_loop.init) {
+    evaluate_statement(stmt->for_loop.init);
+  }
+
+  Evaluation condition = evaluate_expression(stmt->for_loop.condition);
+  if (!convert_to(&condition, EVAL_TYPE_BOOL)) {
+    runtime_error(NULL, "For loop conditional expression does not evaluate to boolean");
+    return;
+  }
+
+  bool iterate = condition.bvalue;
+  while (iterate) {
+    evaluate_statement(stmt->for_loop.body);
+    evaluate_expression(stmt->for_loop.post_iteration);
+    condition = evaluate_expression(stmt->for_loop.condition);
+
+    if (!convert_to(&condition, EVAL_TYPE_BOOL)) {
+      runtime_error(NULL, "For loop conditional expression does not evaluate to boolean");
+      return;
+    }
+
+    iterate = condition.bvalue;
+  }
+
+  scope_pop();
 }
 
 static void evaluate_statement(Statement* stmt) {
@@ -375,6 +408,9 @@ static void evaluate_statement(Statement* stmt) {
     break;
     case STATEMENT_WHILE:
       evaluate_statement_while(stmt);
+    break;
+    case STATEMENT_FOR:
+      evaluate_statement_for(stmt);
     break;
   }
 }
