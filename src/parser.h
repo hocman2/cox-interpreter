@@ -4,6 +4,7 @@
 #include "lexer.h"
 #include "types/arena.h"
 #include "types/vector.h"
+#include "types/evaluation.h"
 
 enum ExpressionType {
   EXPRESSION_UNARY,
@@ -11,6 +12,7 @@ enum ExpressionType {
   EXPRESSION_GROUP,
   EXPRESSION_LITERAL,
   EXPRESSION_ASSIGNMENT,
+  EXPRESSION_EVALUATED,
 };
 
 typedef struct Expression Expression;
@@ -43,6 +45,7 @@ struct Expression {
     Token literal;
     struct Group group;
     struct Assignment assignment;
+    Evaluation evaluated;
   };
 };
 
@@ -53,7 +56,6 @@ enum StatementType {
   STATEMENT_BLOCK,
   STATEMENT_CONDITIONAL,
   STATEMENT_WHILE,
-  STATEMENT_FOR,
 };
 
 typedef struct Statement Statement;
@@ -63,6 +65,7 @@ typedef struct {
   size_t capacity;
   Statement* xs;
 } Statements;
+
 
 typedef Expression* StatementExpression;
 
@@ -89,13 +92,6 @@ struct StatementWhile {
   Statement* body;
 };
 
-struct StatementFor {
-  Statement* init;
-  Expression* condition;
-  Expression* post_iteration;
-  Statement* body;
-};
-
 struct Statement {
   enum StatementType type;
   union {
@@ -104,7 +100,6 @@ struct Statement {
     StatementBlock block;
     struct StatementConditional cond;
     struct StatementWhile while_loop;
-    struct StatementFor for_loop;
   };
 };
 

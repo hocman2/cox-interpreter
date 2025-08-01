@@ -228,6 +228,8 @@ static Evaluation evaluate_expression_assignment(Expression* expr) {
 
 static Evaluation evaluate_expression(Expression* expr) {
   switch (expr->type) {
+    case EXPRESSION_EVALUATED:
+      return expr->evaluated;
     case EXPRESSION_UNARY:
       return evaluate_expression_unary(expr);
     case EXPRESSION_BINARY:
@@ -306,8 +308,6 @@ static void evaluate_statement_var_decl(Statement* stmt) {
 
 static void evaluate_statement_block(Statement* stmt) {
   scope_new();
-    for (size_t i = 0; i < stmt->block.num_stmts; ++i) {
-      evaluate_statement(stmt->block.stmts[i]);   
     for (size_t i = 0; i < stmt->block.count; ++i) {
       Statement* s = stmt->block.xs + i;
       evaluate_statement(s);   
@@ -362,35 +362,6 @@ static void evaluate_statement_while(Statement* stmt) {
   }
 }
 
-static void evaluate_statement_for(Statement* stmt) {
-  scope_new();
-  if (stmt->for_loop.init) {
-    evaluate_statement(stmt->for_loop.init);
-  }
-
-  Evaluation condition = evaluate_expression(stmt->for_loop.condition);
-  if (!convert_to(&condition, EVAL_TYPE_BOOL)) {
-    runtime_error(NULL, "For loop conditional expression does not evaluate to boolean");
-    return;
-  }
-
-  bool iterate = condition.bvalue;
-  while (iterate) {
-    evaluate_statement(stmt->for_loop.body);
-    evaluate_expression(stmt->for_loop.post_iteration);
-    condition = evaluate_expression(stmt->for_loop.condition);
-
-    if (!convert_to(&condition, EVAL_TYPE_BOOL)) {
-      runtime_error(NULL, "For loop conditional expression does not evaluate to boolean");
-      return;
-    }
-
-    iterate = condition.bvalue;
-  }
-
-  scope_pop();
-}
-
 static void evaluate_statement(Statement* stmt) {
   switch (stmt->type) {
     case STATEMENT_EXPR:
@@ -410,9 +381,6 @@ static void evaluate_statement(Statement* stmt) {
     break;
     case STATEMENT_WHILE:
       evaluate_statement_while(stmt);
-    break;
-    case STATEMENT_FOR:
-      evaluate_statement_for(stmt);
     break;
   }
 }

@@ -27,6 +27,8 @@ bool is_declarative_statement(Statement* stmt) {
 
 Token* find_token(Expression* expr) {
   switch (expr->type) {
+    case EXPRESSION_EVALUATED:
+      return NULL;
     case EXPRESSION_LITERAL:
       return &expr->literal;
     case EXPRESSION_GROUP:
@@ -192,6 +194,16 @@ static void recover(struct TokensCursor* cursor) {
 
   // no more statements, recovery failed
   parser.panic = true;
+}
+
+Expression* static_expr_bool(bool value) {
+  Expression* e = arena_alloc(&parser.alloc, sizeof(Expression));
+  e->type = EXPRESSION_EVALUATED;
+  Evaluation eval = {0};
+  eval.type = EVAL_TYPE_BOOL;
+  eval.bvalue = value;
+  e->evaluated = eval;
+  return e;
 }
 
 static Expression* parse_expression(struct TokensCursor* cursor);
@@ -488,28 +500,52 @@ static Statement* parse_statement_while(struct TokensCursor* cursor) {
 
 static Statement* parse_statement_for(struct TokensCursor* cursor) {
   Statement* s = arena_alloc(&parser.alloc, sizeof(Statement));
-  s->type = STATEMENT_FOR;
+  s->type = STATEMENT_BLOCK;
+  vector_new(s->block, 2);
 
   consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Missing opening parentheses next to 'for' keyword");
+  if (token_at(cursor)->type != TOKEN_TYPE_SEMICOLON) {
+    Statement* init = is_keyword(cursor, RESERVED_KEYWORD_VAR) ? parse_statement_var_decl(cursor) : parse_statement_expr(cursor);
+    vector_push(s->block, *init); 
+  } 
+
+  Statement* wheel = arena_alloc(&parser.alloc, sizeof(Statement));
+  wheel->type = STATEMENT_WHILE;
 
   if (token_at(cursor)->type != TOKEN_TYPE_SEMICOLON) {
-    s->for_loop.init = is_keyword(cursor, RESERVED_KEYWORD_VAR) ? parse_statement_var_decl(cursor) : parse_statement_expr(cursor);
+    Expression* condition = parse_expression(cursor);
+    consume(cursor, TOKEN_TYPE_SEMICOLON, "Expect ';' after expression");
+    wheel->while_loop.condition = condition;
   } else {
-    s->for_loop.init = NULL;
+    wheel->while_loop.condition = static_expr_bool(true);
+    advance(cursor);
   }
 
-  s->for_loop.condition = (token_at(cursor)->type == TOKEN_TYPE_SEMICOLON) ?
-    NULL :
-    parse_expression(cursor);
-  consume(cursor, TOKEN_TYPE_SEMICOLON, "Expect ';' after expression");
+  Statement* post_iteration = NULL;
+  if (token_at(cursor)->type != TOKEN_TYPE_RIGHT_PAREN) {
+    post_iteration = arena_alloc(&parser.alloc, sizeof(Statement));
+    post_iteration->type = STATEMENT_EXPR;
+    post_iteration->expr = parse_expression(cursor);
 
-  s->for_loop.post_iteration = (token_at(cursor)->type == TOKEN_TYPE_SEMICOLON) ?
-    NULL :
-    parse_expression(cursor);
+    consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Missing closing parentheses after 'for' declaration");
+  } else {
+    advance(cursor);
+  }
 
-  consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Missing closing parentheses after 'for' declaration");
+  Statement* user_body = parse_statement(cursor); 
 
-  s->for_loop.body = parse_statement(cursor); 
+  if (post_iteration) {
+    Statement* body = arena_alloc(&parser.alloc, sizeof(Statement));
+    body->type = STATEMENT_BLOCK;
+    vector_new(body->block, 2);
+    vector_push(body->block, *user_body);
+    vector_push(body->block, *post_iteration);
+    wheel->while_loop.body = body;
+  } else {
+    wheel->while_loop.body = user_body;
+  }
+
+  vector_push(s->block, *wheel);
 
   return s;
 }
@@ -627,6 +663,9 @@ void expression_pretty_print(Expression* expr) {
       expression_pretty_print(expr->assignment.right);
       printf(")");
     break;
+    case EXPRESSION_EVALUATED:
+     printf("(Static expression)");
+    break;
     default:
       break;
   }
@@ -686,18 +725,6 @@ void statement_pretty_print(Statement* stmt) {
       printf("\n");
       printf("\tBody: ");
       statement_pretty_print(stmt->while_loop.body);
-      printf("\n");
-    break;
-    case STATEMENT_FOR:
-      printf("STATEMENT FOR: \n");
-      printf("\tInitialization: ");
-      statement_pretty_print(stmt->for_loop.init);
-      printf("\tCondition: ");
-      expression_pretty_print(stmt->for_loop.condition);
-      printf("\n\tPost-iteration: ");
-      expression_pretty_print(stmt->for_loop.post_iteration);
-      printf("\n\tBody: ");
-      statement_pretty_print(stmt->for_loop.body);
       printf("\n");
     break;
   }
