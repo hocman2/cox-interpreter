@@ -4,28 +4,13 @@
 
 #include "parser.h"
 #include "types/arena.h"
+#include "types/vector.h"
 #include "error/analysis.h"
 
 #define MAX_EXPR 1000
 
 static jmp_buf parse_error_jump;
 static struct Parser parser;
-
-static void statements_init(Statements* s) {
-  s->_cap = 1;
-  s->num_stmts = 0;
-  s->stmts = malloc(sizeof(Statement*) * s->_cap);
-}
-
-static void statements_push(Statements* stmts, Statement* stmt) {
-  if (stmts->num_stmts == stmts->_cap) {
-    stmts->_cap *= 2;
-    stmts->stmts = realloc(stmts->stmts, sizeof(Statement*) * stmts->_cap);
-  }
-
-  stmts->stmts[stmts->num_stmts] = stmt;
-  stmts->num_stmts += 1;
-}
 
 bool is_non_declarative_statement(Statement* stmt) {
   switch (stmt->type) {
@@ -46,17 +31,13 @@ Token* find_token(Expression* expr) {
       return &expr->literal;
     case EXPRESSION_GROUP:
       return find_token(expr->group.child);
-    break;
     case EXPRESSION_UNARY:
       return find_token(expr->unary.child);
-    break;
     case EXPRESSION_ASSIGNMENT:
       return &expr->assignment.name;
-    break;
     case EXPRESSION_BINARY:
       // a choice must be made ...
       return find_token(expr->binary.left);
-    break;
   }
 }
 
@@ -66,7 +47,17 @@ void parser_init() {
   parser.panic = false;
 }
 
-void parser_free() {
+// Deallocates all statements
+void parser_free(Statements* stmts) {
+  for (size_t i = 0; i < stmts->count; ++i) {
+    Statement* s = stmts->xs + i;
+    if (s->type == STATEMENT_BLOCK) {
+      vector_free(s->block);
+    }
+  }
+
+  vector_free(*stmts);
+
   arena_free(&parser.alloc);
 }
 
@@ -438,7 +429,7 @@ static Statement* parse_statement_var_decl(struct TokensCursor* cursor) {
 static Statement* parse_statement_block(struct TokensCursor* cursor) {
   Statement* stmt_block = arena_alloc(&parser.alloc, sizeof(Statement));
   stmt_block->type = STATEMENT_BLOCK;
-  statements_init(&(stmt_block->block));
+  vector_new(stmt_block->block, 1);
   
   Token* t;
   while (
@@ -446,7 +437,7 @@ static Statement* parse_statement_block(struct TokensCursor* cursor) {
     t->type != TOKEN_TYPE_RIGHT_BRACE && t->type != TOKEN_TYPE_EOF
   ) {
     Statement* stmt = parse_statement(cursor);
-    statements_push(&(stmt_block->block), stmt);
+    vector_push(stmt_block->block, *stmt);
   }
 
   consume(cursor, TOKEN_TYPE_RIGHT_BRACE, "Missing closing curly brace");
@@ -457,14 +448,14 @@ static Statement* parse_statement_block(struct TokensCursor* cursor) {
 static Statement* parse_statement_conditional(struct TokensCursor* cursor) {
   Statement* s = arena_alloc(&parser.alloc, sizeof(Statement));
   s->type = STATEMENT_CONDITIONAL;
-  s->cond.condblocks = vector_new(1, sizeof(struct ConditionalBlock));
-  Vector* condblocks = &(s->cond.condblocks);
+  struct StatementConditional conditional = s->cond;
+  vector_new(conditional, 1);
 
   Expression* cond = parse_expression(cursor);
   Statement* ifstmt = parse_statement_non_decl(cursor);
 
   struct ConditionalBlock block = {cond, ifstmt};
-  vector_push(condblocks, (void*)&block);
+  vector_push(conditional, block);
 
   while (is_keyword(cursor, RESERVED_KEYWORD_ELSE)) {
     if (token_is_keyword(next_token(cursor), RESERVED_KEYWORD_IF)) {
@@ -472,7 +463,7 @@ static Statement* parse_statement_conditional(struct TokensCursor* cursor) {
       advance(cursor); // jump to condition
       block.condition = parse_expression(cursor);
       block.branch = parse_statement_non_decl(cursor);
-      vector_push(condblocks, (void*)&block);
+      vector_push(conditional, block);
       // not that we are not calling parse_statement_conditional
       // recursively because it would needlessly allocate a full if statement
       // that would be discarded
@@ -480,7 +471,7 @@ static Statement* parse_statement_conditional(struct TokensCursor* cursor) {
       advance(cursor);
       block.condition = NULL;
       block.branch = parse_statement_non_decl(cursor);
-      vector_push(condblocks, (void*)&block);
+      vector_push(conditional, block);
     }
   }
 
@@ -577,7 +568,7 @@ bool parse(Token* tokens, size_t num_tokens, Statements* stmts) {
 
   parser.panic = false;
 
-  statements_init(stmts);
+  vector_new(*stmts, 1);
 
   // actual parsing
   while (token_at(&cursor)->type != TOKEN_TYPE_EOF) {
@@ -585,7 +576,7 @@ bool parse(Token* tokens, size_t num_tokens, Statements* stmts) {
       Statement* stmt = parse_statement(&cursor);
       if (!stmt) continue;
 
-      statements_push(stmts, stmt);
+      vector_push(*stmts, *stmt);
     } else {
       recover(&cursor);
       if (is_at_end(&cursor)) break;
@@ -669,16 +660,17 @@ void statement_pretty_print(Statement* stmt) {
     break;
     case STATEMENT_BLOCK:
       printf("STATEMENT BLOCK: \n");
-      for (size_t i = 0; i < stmt->block.num_stmts; ++i) {
+      for (size_t i = 0; i < stmt->block.count; ++i) {
+        Statement* s = stmt->block.xs + i;
+
         printf("\t");
-        statement_pretty_print(stmt->block.stmts[i]);
+        statement_pretty_print(s);
       }
     break;
     case STATEMENT_CONDITIONAL:
       printf("STATEMENT CONDITIONAL: \n");
-      Vector* v = &(stmt->cond.condblocks);
-      for (size_t i = 0; i < v->num_els; ++i) {
-        struct ConditionalBlock* b = ((struct ConditionalBlock*)v->els) + i;
+      for (size_t i = 0; i < stmt->cond.count; ++i) {
+        struct ConditionalBlock* b = stmt->cond.xs + i;
         printf("\tCondition: ");
         expression_pretty_print(b->condition);
         printf("\n");

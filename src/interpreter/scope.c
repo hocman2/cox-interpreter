@@ -23,14 +23,14 @@ void scope_new() {
   Scope* upper_scope = curr_scope;
   curr_scope = arena_alloc(&scope_alloc, sizeof(Scope));
   curr_scope->upper = upper_scope;
-  curr_scope->identifiers = vector_new(ID_INITIAL_CAP, sizeof(Identifier)); 
+  vector_new((*curr_scope), ID_INITIAL_CAP); 
 }
 
 static Identifier* _scope_get_ident_recursive(Scope* s, StringView name) {
   Identifier* id = NULL;
 
-  for (size_t i = 0; i < s->identifiers.num_els; ++i) {
-    Identifier* el = s->identifiers.els + i;
+  for (size_t i = 0; i < s->count; ++i) {
+    Identifier* el = s->xs + i;
     if (el->name.len == name.len) {
       if (strncmp(el->name.str, name.str, name.len) == 0) {
         id = el;
@@ -59,7 +59,7 @@ void scope_insert(StringView name, const Evaluation* value) {
     .value = *value,
   };
 
-  vector_push(&s->identifiers, &id);
+  vector_push((*s), id);
 }
 
 bool scope_replace(StringView name, const Evaluation* value) {
@@ -86,6 +86,6 @@ void scope_pop() {
   Scope* s = curr_scope;
 
   curr_scope = s->upper;
-  vector_free(&s->identifiers);
+  vector_free((*s));
   arena_pop(&scope_alloc, sizeof(Arena));
 }

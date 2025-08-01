@@ -308,18 +308,20 @@ static void evaluate_statement_block(Statement* stmt) {
   scope_new();
     for (size_t i = 0; i < stmt->block.num_stmts; ++i) {
       evaluate_statement(stmt->block.stmts[i]);   
+    for (size_t i = 0; i < stmt->block.count; ++i) {
+      Statement* s = stmt->block.xs + i;
+      evaluate_statement(s);   
     }
   scope_pop();
 }
 
 static void evaluate_statement_conditional(Statement* stmt) {
-  Vector* condblocks = &stmt->cond.condblocks;
-  for (size_t i = 0; i < condblocks->num_els; ++i) {
-    struct ConditionalBlock* b = ((struct ConditionalBlock*)condblocks->els) + i;
+  for (size_t i = 0; i < stmt->cond.count; ++i) {
+    struct ConditionalBlock* b = stmt->cond.xs + i;
     Expression* condition = b->condition;
     
     // else statement
-    if (condition == NULL && i == condblocks->num_els - 1) {
+    if (condition == NULL && i == stmt->cond.count - 1) {
       evaluate_statement(b->branch);
       return;
     }
@@ -435,7 +437,10 @@ void evaluation_pretty_print(Evaluation* e) {
 void interpret(Statements stmts) {
   scope_new();
 
-  for (size_t i = 0; i < stmts.num_stmts; ++i) {
-    evaluate_statement(stmts.stmts[i]);
+  for (size_t i = 0; i < stmts.count; ++i) {
+    Statement* stmt = stmts.xs + i;
+    evaluate_statement(stmt);
   }
+
+  scope_pop();
 }

@@ -63,11 +63,11 @@ int main(int argc, char *argv[]) {
 
     Statements stmts;
     parse(tokens, num_tokens, &stmts);
-    for (size_t i = 0; i < stmts.num_stmts; ++i) {
-      statement_pretty_print(stmts.stmts[i]);
+    for (size_t i = 0; i < stmts.count; ++i) {
+      statement_pretty_print(stmts.xs + i);
     }
 
-    parser_free();
+    parser_free(&stmts);
     free(tokens);
   } else if (strcmp(command, "interpret") == 0) {
     Tokenizer t = tokenizer_new(file_contents);
@@ -86,13 +86,13 @@ int main(int argc, char *argv[]) {
     Statements stmts;
     if (!parse(tokens, num_tokens, &stmts)) {
       return_code = 66; // arbitrary fuck you
-      parser_free();
+      parser_free(&stmts);
       goto cleanup;
     }
 
     interpret(stmts);
 
-    parser_free();
+    parser_free(&stmts);
     free(tokens);
   } else {
     fprintf(stderr, "Unknown command: %s\n", command);

@@ -2,49 +2,32 @@
 #define _VECTOR_H
 
 #include <stdlib.h>
-#include <string.h>
 
-// simple ugly dynamic array struct, not meant to be optimized
+#define vector_new(v, cap) \
+do { \
+  (v).count = 0; \
+  (v).capacity = (cap == 0) ? 1 : cap; \
+  (v).xs = malloc(cap * sizeof(*(v).xs)); \
+} while (0)
 
-typedef struct {
-  void* els;
-  size_t num_els;
-  size_t _cap;
-  size_t _type_sz;
-} Vector;
+#define vector_push(v, x) \
+do { \
+  if ((v).count == (v).capacity) { \
+    (v).capacity *= 2; \
+    (v).xs = realloc((v).xs, sizeof(*(v).xs) * (v).capacity); \
+  } \
+  (v).xs[(v).count] = x;\
+  (v).count += 1; \
+} while (0)
 
-static Vector vector_new(size_t initial_cap, size_t type_sz) {
-  if (initial_cap == 0) initial_cap = 1;
+#define vector_pop(v) \
+do { \
+  (v).count -= 1; \
+} while (0)
 
-  Vector v = {
-    malloc(type_sz * initial_cap),
-    0,
-    initial_cap,
-    type_sz
-  };
-
-  return v;
-}
-
-static void* vector_push(Vector* v, void* el) {
-  if (v->num_els == v->_cap) {
-    v->_cap *= 2;
-    v->els = realloc(v->els, v->_type_sz * v->_cap);
-  }
-
-  void* insertion_loc = v->els + (v->num_els * v->_type_sz);
-  memcpy(insertion_loc, el, v->_type_sz);
-  v->num_els += 1;
-
-  return insertion_loc;
-}
-
-static void vector_pop(Vector* v) {
-  v->num_els -= 1;
-}
-
-static void vector_free(Vector* v) {
-  free(v->els);
-}
+#define vector_free(v) \
+do { \
+  free((v).xs); \
+} while (0)
 
 #endif

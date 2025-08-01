@@ -14,7 +14,9 @@ typedef struct {
 typedef struct Scope Scope;
 struct Scope {
   Scope* upper;
-  Vector identifiers;
+  size_t capacity;
+  size_t count;
+  Identifier* xs;
 };
 
 void scope_new();

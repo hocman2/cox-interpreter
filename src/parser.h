@@ -59,9 +59,9 @@ enum StatementType {
 typedef struct Statement Statement;
 
 typedef struct {
-  Statement** stmts;
-  size_t num_stmts;
-  size_t _cap;
+  size_t count;
+  size_t capacity;
+  Statement* xs;
 } Statements;
 
 typedef Expression* StatementExpression;
@@ -79,7 +79,9 @@ struct ConditionalBlock {
 };
 
 struct StatementConditional {
-  Vector condblocks;
+  size_t count;
+  size_t capacity;
+  struct ConditionalBlock* xs;
 };
 
 struct StatementWhile {
@@ -118,7 +120,7 @@ Token* find_token(Expression* expr);
 
 // call before ast_build pls !!
 void parser_init();
-void parser_free();
+void parser_free(Statements* stmts);
 bool parse(Token* tokens, size_t num_tokens, Statements* stmts);
 void expression_pretty_print(Expression* expr);
 void statement_pretty_print(Statement* stmt);
