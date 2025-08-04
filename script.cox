@@ -1,3 +1,1 @@
-for (var a = 0; a < 10; a = a + 1) {
-  print a;
-}
+hello()(1, 2, 3+5);

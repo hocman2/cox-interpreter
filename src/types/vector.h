@@ -16,7 +16,7 @@ do { \
     (v).capacity *= 2; \
     (v).xs = realloc((v).xs, sizeof(*(v).xs) * (v).capacity); \
   } \
-  (v).xs[(v).count] = x;\
+  (v).xs[(v).count] = (x);\
   (v).count += 1; \
 } while (0)
 

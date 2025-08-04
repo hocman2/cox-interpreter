@@ -10,6 +10,7 @@ enum ExpressionType {
   EXPRESSION_UNARY,
   EXPRESSION_BINARY,
   EXPRESSION_GROUP,
+  EXPRESSION_CALL,
   EXPRESSION_LITERAL,
   EXPRESSION_ASSIGNMENT,
   EXPRESSION_EVALUATED,
@@ -32,6 +33,18 @@ struct Group {
   Expression* child;
 };
 
+struct CallArguments {
+  Expression** xs;
+  size_t capacity;
+  size_t count;
+};
+
+struct Call {
+  Expression* callee;
+  Token open_paren;
+  struct CallArguments args;
+};
+
 struct Assignment {
   Token name;
   Expression* right;
@@ -44,6 +57,7 @@ struct Expression {
     struct Unary unary;
     Token literal;
     struct Group group;
+    struct Call call;
     struct Assignment assignment;
     Evaluation evaluated;
   };

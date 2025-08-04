@@ -33,6 +33,8 @@ Token* find_token(Expression* expr) {
       return &expr->literal;
     case EXPRESSION_GROUP:
       return find_token(expr->group.child);
+    case EXPRESSION_CALL:
+      return &expr->call.open_paren;
     case EXPRESSION_UNARY:
       return find_token(expr->unary.child);
     case EXPRESSION_ASSIGNMENT:
@@ -277,6 +279,38 @@ static Expression* parse_primary(struct TokensCursor* cursor) {
   return expr;
 }
 
+static void parse_arguments(struct TokensCursor* cursor, struct CallArguments* oArgs) {
+  vector_new(*oArgs, 1);
+
+  advance(cursor);
+  if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) {
+    return;
+  }
+
+  while (true) {
+    vector_push(*oArgs, parse_expression(cursor));
+
+    if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) break;
+    else consume(cursor, TOKEN_TYPE_COMMA, "Expected comma as argument separator");
+  }
+}
+
+static Expression* parse_call(struct TokensCursor* cursor) {
+  Expression* expr = parse_primary(cursor);
+
+  while (token_at(cursor)->type == TOKEN_TYPE_LEFT_PAREN) {
+    Expression* callee = expr;
+    expr = arena_alloc(&parser.alloc, sizeof(Expression));
+    expr->type = EXPRESSION_CALL;
+    expr->call.open_paren = *token_at(cursor);
+    expr->call.callee = callee;
+    parse_arguments(cursor, &expr->call.args);
+    consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Expected closing parentheses after function call");
+  }
+
+  return expr;
+}
+
 static Expression* parse_unary(struct TokensCursor* cursor) {
   if (is_unary_op(token_at(cursor))) {
     Expression* expr = arena_alloc(&parser.alloc, sizeof(Expression)); 
@@ -285,7 +319,7 @@ static Expression* parse_unary(struct TokensCursor* cursor) {
     expr->unary.child = parse_unary(advance(cursor));
     return expr;
   } else {
-    return parse_primary(cursor);
+    return parse_call(cursor);
   }
 }
 
@@ -644,6 +678,21 @@ void expression_pretty_print(Expression* expr) {
     case EXPRESSION_GROUP:
       printf("(group ");
       expression_pretty_print(expr->group.child);
+      printf(")");
+      break;
+    case EXPRESSION_CALL:
+      printf("(call callee: ");
+      expression_pretty_print(expr->call.callee);
+
+      printf(", args: (");
+      for (size_t i = 0; i < expr->call.args.count; ++i) {
+        expression_pretty_print(expr->call.args.xs[i]);
+
+        if (i < expr->call.args.count - 1) 
+          printf(", ");
+      }
+      printf(")");
+
       printf(")");
       break;
     case EXPRESSION_UNARY:
