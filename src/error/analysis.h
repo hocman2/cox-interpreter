@@ -7,7 +7,7 @@
 
 #include "../types/token.h"
 
-enum AnalysisErrorType {ANAL_ERROR_SYNTAX, ANAL_ERROR_INTERNAL_LOGIC};
+enum AnalysisErrorType {ANAL_ERROR_SYNTAX, ANAL_ERROR_STATIC, ANAL_ERROR_INTERNAL_LOGIC};
 
 static void _analysis_error_internal(Token* t, enum AnalysisErrorType err_type, const char* msg, va_list fmt_args) {
 
@@ -17,6 +17,9 @@ static void _analysis_error_internal(Token* t, enum AnalysisErrorType err_type, 
     break;
     case ANAL_ERROR_INTERNAL_LOGIC:
       fprintf(stderr, "[Internal logic Error] ");
+    break;
+    case ANAL_ERROR_STATIC:
+      fprintf(stderr, "[Static Error] ");
     break;
   }
 
@@ -46,6 +49,13 @@ static void syntax_error(Token* t, const char* msg, ...) {
   va_list args;
   va_start(args, msg);
   _analysis_error_internal(t, ANAL_ERROR_SYNTAX, msg, args);
+  va_end(args);
+}
+
+static void static_error(Token* t, const char* msg, ...) {
+  va_list args;
+  va_start(args, msg);
+  _analysis_error_internal(t, ANAL_ERROR_STATIC, msg, args);
   va_end(args);
 }
 

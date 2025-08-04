@@ -8,6 +8,7 @@
 #include "error/analysis.h"
 
 #define MAX_EXPR 1000
+#define MAX_CALL_ARGS 127
 
 static jmp_buf parse_error_jump;
 static struct Parser parser;
@@ -305,6 +306,11 @@ static Expression* parse_call(struct TokensCursor* cursor) {
     expr->call.open_paren = *token_at(cursor);
     expr->call.callee = callee;
     parse_arguments(cursor, &expr->call.args);
+
+    if (expr->call.args.count > MAX_CALL_ARGS) {
+      static_error(token_at(cursor), "Function call exceeds number of arguments: %d", MAX_CALL_ARGS);
+    }
+
     consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Expected closing parentheses after function call");
   }
 
