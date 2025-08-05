@@ -26,11 +26,11 @@ void scope_new() {
   vector_new((*curr_scope), ID_INITIAL_CAP); 
 }
 
-static Identifier* _scope_get_ident_recursive(Scope* s, StringView name) {
-  Identifier* id = NULL;
+static StoredValue* _scope_get_ident_recursive(Scope* s, StringView name) {
+  StoredValue* id = NULL;
 
   for (size_t i = 0; i < s->count; ++i) {
-    Identifier* el = s->xs + i;
+    StoredValue* el = s->xs + i;
     if (el->name.len == name.len) {
       if (strncmp(el->name.str, name.str, name.len) == 0) {
         id = el;
@@ -44,17 +44,17 @@ static Identifier* _scope_get_ident_recursive(Scope* s, StringView name) {
   else return NULL;
 }
 
-void scope_insert(StringView name, const Evaluation* value) {
+void scope_insert(StringView name, const Value* value) {
   Scope* s = curr_scope;
   // Update existing identifier if it already exists
   // as specified by lang spec
-  Identifier* id_maybe = _scope_get_ident_recursive(s, name);
+  StoredValue* id_maybe = _scope_get_ident_recursive(s, name);
   if (id_maybe) {
     id_maybe->value = *value;
     return;
   }
 
-  Identifier id = {
+  StoredValue id = {
     .name = name,
     .value = *value,
   };
@@ -62,9 +62,9 @@ void scope_insert(StringView name, const Evaluation* value) {
   vector_push((*s), id);
 }
 
-bool scope_replace(StringView name, const Evaluation* value) {
+bool scope_replace(StringView name, const Value* value) {
   Scope* s = curr_scope;
-  Identifier* id_maybe = _scope_get_ident_recursive(s, name);
+  StoredValue* id_maybe = _scope_get_ident_recursive(s, name);
 
   if (!id_maybe) {
     return false;
@@ -75,9 +75,9 @@ bool scope_replace(StringView name, const Evaluation* value) {
 }
 
 
-Evaluation* scope_get_val(StringView name) {
+Value* scope_get_val(StringView name) {
   Scope* s = curr_scope;
-  Identifier* id = _scope_get_ident_recursive(s, name);
+  StoredValue* id = _scope_get_ident_recursive(s, name);
   if (id) return &(id->value);
   else return NULL;
 }

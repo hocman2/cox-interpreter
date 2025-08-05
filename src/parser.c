@@ -13,19 +13,6 @@
 static jmp_buf parse_error_jump;
 static struct Parser parser;
 
-bool is_non_declarative_statement(Statement* stmt) {
-  switch (stmt->type) {
-    case STATEMENT_VAR_DECL:
-      return false;
-    default:
-      return true;
-  }
-}
-
-bool is_declarative_statement(Statement* stmt) {
-  return !is_non_declarative_statement(stmt);
-}
-
 Token* find_token(Expression* expr) {
   switch (expr->type) {
     case EXPRESSION_EVALUATED:
@@ -136,7 +123,7 @@ static bool is_at_end(struct TokensCursor* cursor) {
   return cursor->remaining <= 1; 
 }
 
-static Token* token_at(struct TokensCursor* cursor) { return cursor->current; }
+inline static Token* token_at(struct TokensCursor* cursor) { return cursor->current; }
 
 static Token* next_token(struct TokensCursor* cursor) {
   if (is_at_end(cursor)) return cursor->current;
@@ -199,10 +186,20 @@ static void recover(struct TokensCursor* cursor) {
   parser.panic = true;
 }
 
+static bool is_decl_statement(struct TokensCursor* cursor) {
+  Token* t = token_at(cursor);
+  return 
+    t->type == TOKEN_TYPE_KEYWORD && (
+      t->keyword == RESERVED_KEYWORD_VAR ||
+      t->keyword == RESERVED_KEYWORD_FUN
+    );
+}
+
+
 Expression* static_expr_bool(bool value) {
   Expression* e = arena_alloc(&parser.alloc, sizeof(Expression));
   e->type = EXPRESSION_EVALUATED;
-  Evaluation eval = {0};
+  Value eval = {0};
   eval.type = EVAL_TYPE_BOOL;
   eval.bvalue = value;
   e->evaluated = eval;
@@ -211,7 +208,6 @@ Expression* static_expr_bool(bool value) {
 
 static Expression* parse_expression(struct TokensCursor* cursor);
 static Statement* parse_statement(struct TokensCursor* cursor);
-
 
 static void set_panic(struct TokensCursor* cursor) {
   parser.panic = true;
@@ -478,6 +474,61 @@ static Statement* parse_statement_var_decl(struct TokensCursor* cursor) {
   return stmt;
 }
 
+static Statement* parse_statement_block(struct TokensCursor* cursor);
+static Statement* parse_statement_fun_decl(struct TokensCursor* cursor) {
+  consume_keyword(cursor, RESERVED_KEYWORD_FUN);
+  Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expect identifier after 'fun' keyword");
+  consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Missing opening parentheses after function identifier");
+
+  Statement* stmt = arena_alloc(&parser.alloc, sizeof(Statement));
+  stmt->type = STATEMENT_FUN_DECL;
+  stmt->fun_decl.identifier = identifier->lexeme;
+  vector_new(stmt->fun_decl.params, 1);
+
+  // parse params
+  Token* t = token_at(cursor);
+  while (t->type != TOKEN_TYPE_RIGHT_PAREN) {
+    Token* param = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expected identifier as function parameter");
+    vector_push(stmt->fun_decl.params, param->lexeme);
+
+    if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) break;
+    else {
+      consume(cursor, TOKEN_TYPE_COMMA, "Expected ',' separator between function parameters");
+      t = token_at(cursor);
+    }
+  }
+
+  consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Expected closing parentheses after parameter list");
+
+  if (token_at(cursor)->type != TOKEN_TYPE_LEFT_BRACE) {
+    syntax_error(token_at(cursor), "Expected opening brace after function definition");
+    set_panic(cursor);
+    return NULL;
+  }
+
+  stmt->fun_decl.body = parse_statement_block(advance(cursor));
+
+  return stmt;
+}
+
+static Statement* parse_statement_decl(struct TokensCursor* cursor) {
+  Token* t = token_at(cursor);
+  if (t->type == TOKEN_TYPE_KEYWORD) {
+    switch (t->keyword) {
+      case RESERVED_KEYWORD_VAR:
+        return parse_statement_var_decl(cursor);
+      case RESERVED_KEYWORD_FUN:
+        return parse_statement_fun_decl(cursor);
+      default:
+        internal_logic_error(t, "Unreachable code %s:%d", __FILE__, __LINE__);
+        return NULL;
+    }
+  } else {
+    internal_logic_error(t, "Unreachable code %s:%d", __FILE__, __LINE__);
+    return NULL;
+  }
+}
+
 static Statement* parse_statement_block(struct TokensCursor* cursor) {
   Statement* stmt_block = arena_alloc(&parser.alloc, sizeof(Statement));
   stmt_block->type = STATEMENT_BLOCK;
@@ -622,8 +673,8 @@ static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
 
 static Statement* parse_statement(struct TokensCursor* cursor) {
   Statement* stmt;
-  if (is_keyword(cursor, RESERVED_KEYWORD_VAR)) {
-    stmt = parse_statement_var_decl(cursor);
+  if (is_decl_statement(cursor)) {
+    stmt = parse_statement_decl(cursor);
   } else {
     stmt = parse_statement_non_decl(cursor); 
   }
@@ -751,6 +802,17 @@ void statement_pretty_print(Statement* stmt) {
       }
       expression_pretty_print(stmt->var_decl.expr);
       printf(")\n");
+    break;
+    case STATEMENT_FUN_DECL:
+      printf("STATEMENT FUN DECLARATION: ");
+      printf("(Identifier => "SV_Fmt" ; Params => ", SV_Fmt_arg(stmt->fun_decl.identifier));
+      for (size_t i = 0; i < stmt->fun_decl.params.count; ++i) {
+        printf(SV_Fmt, SV_Fmt_arg(stmt->fun_decl.params.xs[i]));
+        if (i < stmt->fun_decl.params.count - 1)
+          printf(", ");
+      }
+      printf(")\n\t");
+      statement_pretty_print(stmt->fun_decl.body);
     break;
     case STATEMENT_BLOCK:
       printf("STATEMENT BLOCK: \n");

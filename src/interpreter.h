@@ -2,9 +2,9 @@
 #define _INTERPRETER_H
 
 #include "parser.h"
-#include "types/evaluation.h"
+#include "types/value.h"
 
-void evaluation_pretty_print(Evaluation* e);
+void evaluation_pretty_print(Value* e);
 void interpret(Statements stmts);
 
 #endif

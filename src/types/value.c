@@ -1,28 +1,28 @@
-#include "evaluation.h"
+#include "value.h"
 
 #define DEFINE_CONVERT_FN(NAME, OUT_TYPE) \
 const static struct ConvertionFunction CONVERT_##NAME = {EVAL_TYPE_##OUT_TYPE, NAME##_fn};
 
 struct ConvertionFunction {
-  enum EvalType out_type;
-  void (*fn)(Evaluation* e);
+  enum ValueType out_type;
+  void (*fn)(Value* e);
 };
 
 struct ConvertionTableField {
-  enum EvalType in_type;
+  enum ValueType in_type;
   struct ConvertionFunction convertible_to[10];
 };
 
 // CONVERTION FUNCTIONS //
 
-void DOUBLE_TO_BOOL_fn(Evaluation *e) {
+void DOUBLE_TO_BOOL_fn(Value *e) {
   double val = e->dvalue;
   e->type = EVAL_TYPE_BOOL;
   e->bvalue = val == 0.0;
 }
 DEFINE_CONVERT_FN(DOUBLE_TO_BOOL, BOOL);
 
-void BOOL_TO_DOUBLE_fn(Evaluation* e) {
+void BOOL_TO_DOUBLE_fn(Value* e) {
   bool val = e->bvalue;
   e->type = EVAL_TYPE_DOUBLE;
   e->dvalue = (val) ? 1.0 : 0.0;
@@ -40,7 +40,7 @@ static const struct ConvertionTableField convertion_table[] = {
 };
 
 
-bool is_convertible_to_type(const Evaluation* e, enum EvalType expected) {
+bool is_convertible_to_type(const Value* e, enum ValueType expected) {
   if (e->type == expected) {
     return true;
   }
@@ -61,7 +61,7 @@ bool is_convertible_to_type(const Evaluation* e, enum EvalType expected) {
   return false;
 }
 
-bool convert_to(Evaluation* e, enum EvalType to_type) {
+bool convert_to(Value* e, enum ValueType to_type) {
   if (e->type == to_type) {
     return true;
   }

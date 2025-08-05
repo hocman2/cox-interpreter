@@ -2,25 +2,25 @@
 #include "parser.h"
 #include "lexer.h"
 #include "interpreter/scope.h"
-#include "types/evaluation.h"
+#include "types/value.h"
 #include "error/runtime.h"
 
 #include <assert.h>
 #include <string.h>
 #include <math.h>
 
-static Evaluation evaluate_expression(Expression* expr);
+static Value evaluate_expression(Expression* expr);
 
-static Evaluation evaluate_expression_literal_string(Expression* expr) {
+static Value evaluate_expression_literal_string(Expression* expr) {
   assert(expr->type == EXPRESSION_LITERAL && expr->literal.type == TOKEN_TYPE_STRING);
 
-  Evaluation e;
+  Value e;
   e.type = EVAL_TYPE_STRING_VIEW;
   e.svvalue = expr->literal.content;
   return e;
 }
 
-static Evaluation evaluate_expression_literal_double(Expression* expr) {
+static Value evaluate_expression_literal_double(Expression* expr) {
   assert(expr->type == EXPRESSION_LITERAL && expr->literal.type == TOKEN_TYPE_NUMBER);
   Number num = expr->literal.value;
   double val = NAN;
@@ -37,28 +37,28 @@ static Evaluation evaluate_expression_literal_double(Expression* expr) {
     val = num.whole + num.decimal / pow(10, numdigits);
   }
 
-  Evaluation e;
+  Value e;
   e.type = EVAL_TYPE_DOUBLE;
   e.dvalue = val;
   return e;
 }
 
-static Evaluation evaluate_expression_group(Expression* expr) {
+static Value evaluate_expression_group(Expression* expr) {
   assert(expr->type == EXPRESSION_GROUP);
   return evaluate_expression(expr->group.child);
 }
 
-static Evaluation evaluate_expression_unary(Expression* expr) {
+static Value evaluate_expression_unary(Expression* expr) {
   assert(expr->type == EXPRESSION_UNARY);
 
-  Evaluation e;
+  Value e;
 
-  Evaluation right = evaluate_expression(expr->unary.child);
+  Value right = evaluate_expression(expr->unary.child);
   switch (expr->unary.operator.type) {
     case TOKEN_TYPE_MINUS:
       if (!convert_to(&right, EVAL_TYPE_DOUBLE)) {
         runtime_error(find_token(expr->unary.child), "Unary operation not permitted: operand is not a number");
-        Evaluation e = {EVAL_TYPE_ERR};
+        Value e = {EVAL_TYPE_ERR};
         return e;
       }
 
@@ -81,9 +81,9 @@ static Evaluation evaluate_expression_unary(Expression* expr) {
   return e;
 }
 
-static Evaluation binary_eval_member(Expression* expr, bool eval_left, enum EvalType expected_type) {
+static Value binary_eval_member(Expression* expr, bool eval_left, enum ValueType expected_type) {
   Expression* to_eval = (eval_left) ? expr->binary.left : expr->binary.right;
-  Evaluation eval = evaluate_expression(to_eval);
+  Value eval = evaluate_expression(to_eval);
 
   if (!convert_to(&eval, expected_type)) {
     runtime_error(
@@ -92,17 +92,17 @@ static Evaluation binary_eval_member(Expression* expr, bool eval_left, enum Eval
       (eval_left) ? "left" : "right", eval_type_to_str(expected_type)
     );
 
-    Evaluation e = {EVAL_TYPE_ERR};
+    Value e = {EVAL_TYPE_ERR};
     return e;
   }
 
   return eval;
 }
 
-static Evaluation evaluate_expression_binary(Expression* expr) {
+static Value evaluate_expression_binary(Expression* expr) {
   assert(expr->type == EXPRESSION_BINARY);
 
-  Evaluation e;
+  Value e;
 
   switch (expr->binary.operator.type) {
     // Arithmetic operators evaluation
@@ -110,8 +110,8 @@ static Evaluation evaluate_expression_binary(Expression* expr) {
     case TOKEN_TYPE_MINUS:
     case TOKEN_TYPE_STAR:
     case TOKEN_TYPE_SLASH: {
-      Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_DOUBLE);
-      Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_DOUBLE);
+      Value left = binary_eval_member(expr, true, EVAL_TYPE_DOUBLE);
+      Value right = binary_eval_member(expr, false, EVAL_TYPE_DOUBLE);
 
       e.type = EVAL_TYPE_DOUBLE;
       switch (expr->binary.operator.type) {
@@ -144,8 +144,8 @@ static Evaluation evaluate_expression_binary(Expression* expr) {
     case TOKEN_TYPE_GREATER_EQUAL:
     case TOKEN_TYPE_EQUAL_EQUAL:
     case TOKEN_TYPE_BANG_EQUAL: {
-      Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_DOUBLE);
-      Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_DOUBLE);
+      Value left = binary_eval_member(expr, true, EVAL_TYPE_DOUBLE);
+      Value right = binary_eval_member(expr, false, EVAL_TYPE_DOUBLE);
 
       e.type = EVAL_TYPE_BOOL;
       switch (expr->binary.operator.type) {
@@ -178,22 +178,22 @@ static Evaluation evaluate_expression_binary(Expression* expr) {
       e.type = EVAL_TYPE_BOOL;
       switch (expr->binary.operator.keyword) {
         case RESERVED_KEYWORD_OR: {
-          Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_BOOL);
+          Value left = binary_eval_member(expr, true, EVAL_TYPE_BOOL);
           if (left.bvalue) {
             e.bvalue = true;
           } else {
-            Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_BOOL);
+            Value right = binary_eval_member(expr, false, EVAL_TYPE_BOOL);
             e.bvalue = right.bvalue;
           }
         }
           break;
           
         case RESERVED_KEYWORD_AND: {
-          Evaluation left = binary_eval_member(expr, true, EVAL_TYPE_BOOL);
+          Value left = binary_eval_member(expr, true, EVAL_TYPE_BOOL);
           if (!left.bvalue) {
             e.bvalue = false;
           } else {
-            Evaluation right = binary_eval_member(expr, false, EVAL_TYPE_BOOL);
+            Value right = binary_eval_member(expr, false, EVAL_TYPE_BOOL);
             e.bvalue = right.bvalue;
           }
         }
@@ -212,13 +212,13 @@ static Evaluation evaluate_expression_binary(Expression* expr) {
   return e;
 }
 
-static Evaluation evaluate_expression_assignment(Expression* expr) {
-  Evaluation rhs = evaluate_expression(expr->assignment.right);
+static Value evaluate_expression_assignment(Expression* expr) {
+  Value rhs = evaluate_expression(expr->assignment.right);
   StringView lexeme = expr->assignment.name.lexeme;
 
   if (!scope_replace(lexeme, &rhs)) {
     runtime_error(&expr->assignment.name, "Assignement failed. Variable must be declared with the 'var' keyword first"); 
-    Evaluation e = {EVAL_TYPE_ERR};
+    Value e = {EVAL_TYPE_ERR};
     return e;
   }
 
@@ -226,7 +226,7 @@ static Evaluation evaluate_expression_assignment(Expression* expr) {
   return rhs;
 }
 
-static Evaluation evaluate_expression(Expression* expr) {
+static Value evaluate_expression(Expression* expr) {
   switch (expr->type) {
     case EXPRESSION_EVALUATED:
       return expr->evaluated;
@@ -243,11 +243,11 @@ static Evaluation evaluate_expression(Expression* expr) {
         case TOKEN_TYPE_NUMBER:
           return evaluate_expression_literal_double(expr);
         case TOKEN_TYPE_IDENTIFIER: {
-          Evaluation* val = scope_get_val(expr->literal.lexeme);
+          Value* val = scope_get_val(expr->literal.lexeme);
           if (val == NULL) {
             StringView lexeme = expr->literal.lexeme;
             runtime_error(NULL, "Unresolved identifier: %.*s", lexeme.len, lexeme.str);
-            Evaluation e = {EVAL_TYPE_ERR};
+            Value e = {EVAL_TYPE_ERR};
             return e;
           } else {
             return *val;
@@ -258,13 +258,13 @@ static Evaluation evaluate_expression(Expression* expr) {
           switch(expr->literal.keyword) {
             case RESERVED_KEYWORD_TRUE:
               {
-                Evaluation e = {EVAL_TYPE_BOOL};
+                Value e = {EVAL_TYPE_BOOL};
                 e.bvalue = true;
                 return e;
               }
             case RESERVED_KEYWORD_FALSE:
               {
-                Evaluation e = {EVAL_TYPE_BOOL};
+                Value e = {EVAL_TYPE_BOOL};
                 e.bvalue = false;
                 return e;
               }
@@ -295,15 +295,19 @@ static void evaluate_statement_expr(Statement* stmt) {
 }
 
 static void evaluate_statement_print(Statement* stmt) {
-  Evaluation e = evaluate_expression(stmt->expr);
+  Value e = evaluate_expression(stmt->expr);
 
   // have some better printing in the future
   evaluation_pretty_print(&e);
 }
 
 static void evaluate_statement_var_decl(Statement* stmt) {
-  Evaluation e = evaluate_expression(stmt->var_decl.expr);
+  Value e = evaluate_expression(stmt->var_decl.expr);
   scope_insert(stmt->var_decl.identifier, &e);
+}
+
+static void evaluate_statement_fun_decl(Statement* stmt) {
+  
 }
 
 static void evaluate_statement_block(Statement* stmt) {
@@ -326,7 +330,7 @@ static void evaluate_statement_conditional(Statement* stmt) {
       return;
     }
 
-    Evaluation e = evaluate_expression(condition);
+    Value e = evaluate_expression(condition);
     if (!convert_to(&e, EVAL_TYPE_BOOL)) {
       runtime_error(NULL, "If statement condition can't be evaluated as boolean");
       exit(1);
@@ -340,7 +344,7 @@ static void evaluate_statement_conditional(Statement* stmt) {
 }
 
 static void evaluate_statement_while(Statement* stmt) {
-  Evaluation e = evaluate_expression(stmt->while_loop.condition);
+  Value e = evaluate_expression(stmt->while_loop.condition);
 
   if (!convert_to(&e, EVAL_TYPE_BOOL)) {
     runtime_error(NULL, "While loop condition does not evaluate to bool");
@@ -373,6 +377,9 @@ static void evaluate_statement(Statement* stmt) {
     case STATEMENT_VAR_DECL:
       evaluate_statement_var_decl(stmt);
     break;
+    case STATEMENT_FUN_DECL:
+      evaluate_statement_fun_decl(stmt);
+    break;
     case STATEMENT_BLOCK:
       evaluate_statement_block(stmt);
     break;
@@ -385,7 +392,7 @@ static void evaluate_statement(Statement* stmt) {
   }
 }
 
-void evaluation_pretty_print(Evaluation* e) {
+void evaluation_pretty_print(Value* e) {
   switch(e->type) {
     case EVAL_TYPE_DOUBLE:
       printf("Double: %f\n", e->dvalue);
@@ -395,6 +402,9 @@ void evaluation_pretty_print(Evaluation* e) {
     break;
     case EVAL_TYPE_BOOL:
       printf("Boolean: %s\n", e->bvalue ? "true" : "false");
+    break;
+    case EVAL_TYPE_FUN:
+      printf("Function");
     break;
     case EVAL_TYPE_ERR:
       printf("Error\n");
