@@ -3,6 +3,7 @@
 #include "lexer.h"
 #include "interpreter/scope.h"
 #include "types/value.h"
+#include "types/string_view.h"
 #include "error/runtime.h"
 
 #include <assert.h>
@@ -10,6 +11,7 @@
 #include <math.h>
 
 static Value evaluate_expression(Expression* expr);
+static void evaluate_statement(Statement* stmt);
 
 static Value evaluate_expression_literal_string(Expression* expr) {
   assert(expr->type == EXPRESSION_LITERAL && expr->literal.type == TOKEN_TYPE_STRING);
@@ -46,6 +48,62 @@ static Value evaluate_expression_literal_double(Expression* expr) {
 static Value evaluate_expression_group(Expression* expr) {
   assert(expr->type == EXPRESSION_GROUP);
   return evaluate_expression(expr->group.child);
+}
+
+static Value evaluate_expression_call(Expression* expr) {
+  Value fnvalue_evaluated;
+  Value* fnvalue; 
+  Expression* callee_expr = expr->call.callee;
+
+  if (
+    callee_expr->type == EXPRESSION_LITERAL && 
+    callee_expr->literal.type == TOKEN_TYPE_IDENTIFIER
+  ) {
+    fnvalue = scope_get_val(callee_expr->literal.lexeme);
+    if (fnvalue == NULL) {
+      runtime_error(find_token(callee_expr), "Unresolved identifier as function name");
+      return (Value){EVAL_TYPE_ERR};
+    }
+  } else {
+    fnvalue_evaluated = evaluate_expression(callee_expr);
+    fnvalue = &fnvalue_evaluated;
+    if (fnvalue->type != EVAL_TYPE_FUN) {
+      runtime_error(find_token(callee_expr), "Expression does not evaluate to a callable");
+      return (Value){EVAL_TYPE_ERR};
+    }
+  }
+
+  struct FunctionValue* fn = &fnvalue->fnvalue;
+  if (expr->call.args.count < fn->params.count) {
+    char errmsg[1024] = "Missing arguments: ";
+    size_t cursor = strlen(errmsg);
+    for (size_t i = expr->call.args.count; i < fn->params.count; ++i) {
+      StringView param_name = fn->params.xs[i];
+      snprintf(errmsg + cursor, param_name.len + 3, "\""SV_Fmt"\"", SV_Fmt_arg(param_name));
+      cursor += param_name.len + 2;
+      if (i < fn->params.count - 1) {
+        snprintf(errmsg + cursor, 3, ", ");
+        cursor += 2;
+      }
+    }
+    snprintf(errmsg + cursor, strlen(" in function call") + 1, " in function call");
+    runtime_error(find_token(callee_expr), errmsg);
+    return (Value){EVAL_TYPE_ERR};
+  }
+
+  scope_new();
+  for (size_t i = 0; i < fn->params.count; ++i) {
+    StringView param_name = fn->params.xs[i];
+    Value arg = evaluate_expression(expr->call.args.xs[i]);
+    scope_insert(param_name, &arg);
+  }
+
+  evaluate_statement(fn->body);
+  scope_pop();
+
+  Value ret = {EVAL_TYPE_BOOL};
+  ret.bvalue = false;
+  return ret; 
 }
 
 static Value evaluate_expression_unary(Expression* expr) {
@@ -236,6 +294,8 @@ static Value evaluate_expression(Expression* expr) {
       return evaluate_expression_binary(expr);
     case EXPRESSION_GROUP:
       return evaluate_expression_group(expr);
+    case EXPRESSION_CALL:
+      return evaluate_expression_call(expr);
     case EXPRESSION_LITERAL:
       switch (expr->literal.type) {
         case TOKEN_TYPE_STRING:
@@ -246,7 +306,7 @@ static Value evaluate_expression(Expression* expr) {
           Value* val = scope_get_val(expr->literal.lexeme);
           if (val == NULL) {
             StringView lexeme = expr->literal.lexeme;
-            runtime_error(NULL, "Unresolved identifier: %.*s", lexeme.len, lexeme.str);
+            runtime_error(NULL, "Unresolved identifier: "SV_Fmt, SV_Fmt_arg(lexeme));
             Value e = {EVAL_TYPE_ERR};
             return e;
           } else {
@@ -288,8 +348,6 @@ static Value evaluate_expression(Expression* expr) {
   }
 }
 
-static void evaluate_statement(Statement* stmt);
-
 static void evaluate_statement_expr(Statement* stmt) {
   evaluate_expression(stmt->expr);
 }
@@ -307,7 +365,14 @@ static void evaluate_statement_var_decl(Statement* stmt) {
 }
 
 static void evaluate_statement_fun_decl(Statement* stmt) {
-  
+  struct FunctionValue fnval = {0};
+  fnval.body = stmt->fun_decl.body; 
+  vector_copy(fnval.params, stmt->fun_decl.params);
+
+  Value fn = {0};
+  fn.type = EVAL_TYPE_FUN;
+  fn.fnvalue = fnval;
+  scope_insert(stmt->fun_decl.identifier, &fn);
 }
 
 static void evaluate_statement_block(Statement* stmt) {

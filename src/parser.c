@@ -592,7 +592,7 @@ static Statement* parse_statement_for(struct TokensCursor* cursor) {
 
   consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Missing opening parentheses next to 'for' keyword");
   if (token_at(cursor)->type != TOKEN_TYPE_SEMICOLON) {
-    Statement* init = is_keyword(cursor, RESERVED_KEYWORD_VAR) ? parse_statement_var_decl(cursor) : parse_statement_expr(cursor);
+    Statement* init = is_keyword(cursor, RESERVED_KEYWORD_VAR) ? parse_statement_var_decl(advance(cursor)) : parse_statement_expr(cursor);
     vector_push(s->block, *init); 
   } 
 
@@ -646,7 +646,7 @@ static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
     case TOKEN_TYPE_KEYWORD:
       switch (t->keyword) {
         case RESERVED_KEYWORD_PRINT:
-          return parse_statement_print(advacne(cursor));
+          return parse_statement_print(advance(cursor));
         case RESERVED_KEYWORD_IF:
           return parse_statement_conditional(advance(cursor));
         case RESERVED_KEYWORD_ELSE:

@@ -1,7 +1,7 @@
-fun pd(msg, n) {
+fun pd(msg, amt, other) {
   for (var i = 0; i < n; i = i + 1) {
     print msg;
   }
 }
 
-pd("a", 1*5);
+pd();

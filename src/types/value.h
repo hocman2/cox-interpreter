@@ -21,7 +21,7 @@ struct FunctionParameters {
 
 struct FunctionValue {
   struct FunctionParameters params;
-  Statements body;
+  Statement* body;
 };
 
 typedef struct {
