@@ -452,15 +452,12 @@ static Statement* parse_statement_expr(struct TokensCursor* cursor) {
 }
 
 static Statement* parse_statement_print(struct TokensCursor* cursor) {
-  consume_keyword(cursor, RESERVED_KEYWORD_PRINT);
   Statement* stmt = parse_statement_expr(cursor); 
   stmt->type = STATEMENT_PRINT_EXPR;
   return stmt;
 }
 
 static Statement* parse_statement_var_decl(struct TokensCursor* cursor) {
-  consume_keyword(cursor, RESERVED_KEYWORD_VAR);
-
   Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expect identifier after 'var' keyword");
   consume(cursor, TOKEN_TYPE_EQUAL, "Expect '=' after identifier");
   Statement* stmt = parse_statement_expr(cursor);
@@ -476,7 +473,6 @@ static Statement* parse_statement_var_decl(struct TokensCursor* cursor) {
 
 static Statement* parse_statement_block(struct TokensCursor* cursor);
 static Statement* parse_statement_fun_decl(struct TokensCursor* cursor) {
-  consume_keyword(cursor, RESERVED_KEYWORD_FUN);
   Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expect identifier after 'fun' keyword");
   consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Missing opening parentheses after function identifier");
 
@@ -516,9 +512,9 @@ static Statement* parse_statement_decl(struct TokensCursor* cursor) {
   if (t->type == TOKEN_TYPE_KEYWORD) {
     switch (t->keyword) {
       case RESERVED_KEYWORD_VAR:
-        return parse_statement_var_decl(cursor);
+        return parse_statement_var_decl(advance(cursor));
       case RESERVED_KEYWORD_FUN:
-        return parse_statement_fun_decl(cursor);
+        return parse_statement_fun_decl(advance(cursor));
       default:
         internal_logic_error(t, "Unreachable code %s:%d", __FILE__, __LINE__);
         return NULL;
@@ -650,7 +646,7 @@ static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
     case TOKEN_TYPE_KEYWORD:
       switch (t->keyword) {
         case RESERVED_KEYWORD_PRINT:
-          return parse_statement_print(cursor);
+          return parse_statement_print(advacne(cursor));
         case RESERVED_KEYWORD_IF:
           return parse_statement_conditional(advance(cursor));
         case RESERVED_KEYWORD_ELSE:
