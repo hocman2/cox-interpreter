@@ -28,6 +28,19 @@ do { \
 #define vector_free(v) \
 do { \
   free((v).xs); \
+  (v).count = 0; \
+  (v).capacity = 0; \
+} while (0)
+
+#define vector_copy(des, src) \
+do { \
+  vector_free(des); \
+  (des).capacity = (src).capacity; \
+  (des).count = (src).count; \
+  (des).xs = malloc((src).count * sizeof(*(src).xs)); \
+  for (size_t i = 0; i < (src).count; ++i) { \
+    (des).xs[i] = (src).xs[i]; \
+  } \
 } while (0)
 
 #endif
