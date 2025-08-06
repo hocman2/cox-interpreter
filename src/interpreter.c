@@ -11,8 +11,12 @@
 #include <math.h>
 #include <setjmp.h>
 
-Value pending_return = {EVAL_TYPE_NIL};
-jmp_buf jmp_buf_fncall;
+struct PendingReturn {
+  Value value;
+  bool env_init;
+  jmp_buf env;
+};
+static struct PendingReturn pending_return = {{EVAL_TYPE_NIL}, false}; 
 
 static Value evaluate_expression(Expression* expr);
 static void evaluate_statement(Statement* stmt);
@@ -105,12 +109,14 @@ static Value evaluate_expression_call(Expression* expr) {
     scope_insert(param_name, &arg);
   }
 
-  if (setjmp(jmp_buf_fncall) == 0) {
+  if (setjmp(pending_return.env) == 0) {
+    pending_return.env_init = true;
     evaluate_statement(fn->body);
     return (Value){EVAL_TYPE_NIL};
   } else {
-    Value ret = pending_return;
-    pending_return = (Value){EVAL_TYPE_NIL};
+    pending_return.env_init = false;
+    Value ret = pending_return.value;
+    pending_return.value = (Value){EVAL_TYPE_NIL};
     return ret;
   }
 }
@@ -443,8 +449,12 @@ static void evaluate_statement_while(Statement* stmt) {
 }
 
 static void evaluate_statement_return(Statement* stmt) {
-  pending_return = evaluate_expression(stmt->ret);
-  longjmp(jmp_buf_fncall, 1);
+  if (pending_return.env_init) {
+    pending_return.value = evaluate_expression(stmt->ret);
+    longjmp(pending_return.env, 1);
+  } else {
+    runtime_error(find_token(stmt->ret), "Return statement must be used inside a function body");
+  }
 }
 
 static void evaluate_statement(Statement* stmt) {
