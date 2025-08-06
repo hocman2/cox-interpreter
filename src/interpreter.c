@@ -90,7 +90,10 @@ static Value evaluate_expression_call(Expression* expr) {
       }
     }
     snprintf(errmsg + cursor, strlen(" in function call") + 1, " in function call");
-    runtime_error(find_token(callee_expr), errmsg);
+    runtime_error(&expr->call.open_paren, errmsg);
+    return (Value){EVAL_TYPE_ERR};
+  } else if (expr->call.args.count > fn->params.count) {
+    runtime_error(&expr->call.open_paren, "Extraneous arguments in function call");
     return (Value){EVAL_TYPE_ERR};
   }
 
