@@ -637,6 +637,17 @@ static Statement* parse_statement_for(struct TokensCursor* cursor) {
   return s;
 }
 
+static Statement* parse_statement_return(struct TokensCursor* cursor) {
+  Statement* stmt = parse_statement_expr(cursor);
+
+  stmt->type = STATEMENT_RETURN;
+  // Useless in theory
+  Expression* expr = stmt->expr;
+  stmt->ret = expr;
+
+  return stmt;
+}
+
 static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
   Token* t = token_at(cursor);
   switch(t->type) {
@@ -656,6 +667,8 @@ static Statement* parse_statement_non_decl(struct TokensCursor* cursor) {
           return parse_statement_while(advance(cursor));
         case RESERVED_KEYWORD_FOR:
           return parse_statement_for(advance(cursor));
+        case RESERVED_KEYWORD_RETURN:
+          return parse_statement_return(advance(cursor));
         default:
         break;
       }
@@ -838,6 +851,11 @@ void statement_pretty_print(Statement* stmt) {
       printf("\n");
       printf("\tBody: ");
       statement_pretty_print(stmt->while_loop.body);
+      printf("\n");
+    break;
+    case STATEMENT_RETURN:
+      printf("STATEMENT RETURN: ");
+      expression_pretty_print(stmt->ret);
       printf("\n");
     break;
   }

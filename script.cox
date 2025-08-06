@@ -1,7 +1,8 @@
-fun pd(msg, amt, other) {
+fun pd(msg, n) {
   for (var i = 0; i < n; i = i + 1) {
     print msg;
   }
+  return n;
 }
 
-pd();
+print pd("hello", 2);

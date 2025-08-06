@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "lexer.h"
 #include "interpreter/scope.h"
+#include "interpreter/stack.h"
 #include "types/value.h"
 #include "types/string_view.h"
 #include "error/runtime.h"
@@ -9,6 +10,8 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
+
+static Stack stack;
 
 static Value evaluate_expression(Expression* expr);
 static void evaluate_statement(Statement* stmt);
@@ -101,9 +104,13 @@ static Value evaluate_expression_call(Expression* expr) {
   evaluate_statement(fn->body);
   scope_pop();
 
-  Value ret = {EVAL_TYPE_BOOL};
-  ret.bvalue = false;
-  return ret; 
+  if (stack_count(&stack)) {
+    return stack_pop(&stack);
+  } else {
+    Value ret = {EVAL_TYPE_BOOL};
+    ret.bvalue = false;
+    return ret; 
+  }
 }
 
 static Value evaluate_expression_unary(Expression* expr) {
@@ -377,10 +384,16 @@ static void evaluate_statement_fun_decl(Statement* stmt) {
 
 static void evaluate_statement_block(Statement* stmt) {
   scope_new();
-    for (size_t i = 0; i < stmt->block.count; ++i) {
-      Statement* s = stmt->block.xs + i;
+  for (size_t i = 0; i < stmt->block.count; ++i) {
+    Statement* s = stmt->block.xs + i;
+
+    if (s->type == STATEMENT_RETURN) {
+      Value ret = evaluate_expression(s->ret);
+      stack_push(&stack, &ret); 
+    } else {
       evaluate_statement(s);   
     }
+  }
   scope_pop();
 }
 
@@ -454,6 +467,9 @@ static void evaluate_statement(Statement* stmt) {
     case STATEMENT_WHILE:
       evaluate_statement_while(stmt);
     break;
+    case STATEMENT_RETURN:
+      runtime_error(find_token(stmt->ret), "Return statement must be placed inside of a block");
+    break;
   }
 }
 
@@ -478,6 +494,7 @@ void evaluation_pretty_print(Value* e) {
 }
 
 void interpret(Statements stmts) {
+  stack = stack_new();
   scope_new();
 
   for (size_t i = 0; i < stmts.count; ++i) {
