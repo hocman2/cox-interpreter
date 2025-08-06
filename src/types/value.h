@@ -11,6 +11,7 @@ enum ValueType {
   EVAL_TYPE_BOOL,
   EVAL_TYPE_ERR,
   EVAL_TYPE_FUN,
+  EVAL_TYPE_NIL,
 };
 
 struct FunctionParameters {
@@ -46,6 +47,8 @@ static const char* eval_type_to_str(enum ValueType t) {
     return "err";
   case EVAL_TYPE_FUN:
     return "fun";
+  case EVAL_TYPE_NIL:
+    return "nil";
   }
 }
 bool is_convertible_to_type(const Value* e, enum ValueType expected); 

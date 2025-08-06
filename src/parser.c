@@ -547,14 +547,14 @@ static Statement* parse_statement_block(struct TokensCursor* cursor) {
 static Statement* parse_statement_conditional(struct TokensCursor* cursor) {
   Statement* s = arena_alloc(&parser.alloc, sizeof(Statement));
   s->type = STATEMENT_CONDITIONAL;
-  struct StatementConditional conditional = s->cond;
-  vector_new(conditional, 1);
+  struct StatementConditional* conditional = &s->cond;
+  vector_new(*conditional, 1);
 
   Expression* cond = parse_expression(cursor);
   Statement* ifstmt = parse_statement_non_decl(cursor);
 
   struct ConditionalBlock block = {cond, ifstmt};
-  vector_push(conditional, block);
+  vector_push(*conditional, block);
 
   while (is_keyword(cursor, RESERVED_KEYWORD_ELSE)) {
     if (token_is_keyword(next_token(cursor), RESERVED_KEYWORD_IF)) {
@@ -562,7 +562,7 @@ static Statement* parse_statement_conditional(struct TokensCursor* cursor) {
       advance(cursor); // jump to condition
       block.condition = parse_expression(cursor);
       block.branch = parse_statement_non_decl(cursor);
-      vector_push(conditional, block);
+      vector_push(*conditional, block);
       // not that we are not calling parse_statement_conditional
       // recursively because it would needlessly allocate a full if statement
       // that would be discarded
@@ -570,7 +570,7 @@ static Statement* parse_statement_conditional(struct TokensCursor* cursor) {
       advance(cursor);
       block.condition = NULL;
       block.branch = parse_statement_non_decl(cursor);
-      vector_push(conditional, block);
+      vector_push(*conditional, block);
     }
   }
 

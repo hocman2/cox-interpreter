@@ -2,7 +2,6 @@
 #include "parser.h"
 #include "lexer.h"
 #include "interpreter/scope.h"
-#include "interpreter/stack.h"
 #include "types/value.h"
 #include "types/string_view.h"
 #include "error/runtime.h"
@@ -10,8 +9,10 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
+#include <setjmp.h>
 
-static Stack stack;
+Value pending_return = {EVAL_TYPE_NIL};
+jmp_buf jmp_buf_fncall;
 
 static Value evaluate_expression(Expression* expr);
 static void evaluate_statement(Statement* stmt);
@@ -104,15 +105,13 @@ static Value evaluate_expression_call(Expression* expr) {
     scope_insert(param_name, &arg);
   }
 
-  evaluate_statement(fn->body);
-  scope_pop();
-
-  if (stack_count(&stack)) {
-    return stack_pop(&stack);
+  if (setjmp(jmp_buf_fncall) == 0) {
+    evaluate_statement(fn->body);
+    return (Value){EVAL_TYPE_NIL};
   } else {
-    Value ret = {EVAL_TYPE_BOOL};
-    ret.bvalue = false;
-    return ret; 
+    Value ret = pending_return;
+    pending_return = (Value){EVAL_TYPE_NIL};
+    return ret;
   }
 }
 
@@ -338,6 +337,8 @@ static Value evaluate_expression(Expression* expr) {
                 e.bvalue = false;
                 return e;
               }
+            case RESERVED_KEYWORD_NIL:
+                return (Value){EVAL_TYPE_NIL};
             default:
               fprintf(stderr, "Keyword cannot be evaluated");
               exit(1);
@@ -389,13 +390,7 @@ static void evaluate_statement_block(Statement* stmt) {
   scope_new();
   for (size_t i = 0; i < stmt->block.count; ++i) {
     Statement* s = stmt->block.xs + i;
-
-    if (s->type == STATEMENT_RETURN) {
-      Value ret = evaluate_expression(s->ret);
-      stack_push(&stack, &ret); 
-    } else {
-      evaluate_statement(s);   
-    }
+    evaluate_statement(s);   
   }
   scope_pop();
 }
@@ -414,7 +409,7 @@ static void evaluate_statement_conditional(Statement* stmt) {
     Value e = evaluate_expression(condition);
     if (!convert_to(&e, EVAL_TYPE_BOOL)) {
       runtime_error(NULL, "If statement condition can't be evaluated as boolean");
-      exit(1);
+      return;
     }
 
     if(e.bvalue) {
@@ -447,6 +442,11 @@ static void evaluate_statement_while(Statement* stmt) {
   }
 }
 
+static void evaluate_statement_return(Statement* stmt) {
+  pending_return = evaluate_expression(stmt->ret);
+  longjmp(jmp_buf_fncall, 1);
+}
+
 static void evaluate_statement(Statement* stmt) {
   switch (stmt->type) {
     case STATEMENT_EXPR:
@@ -471,7 +471,7 @@ static void evaluate_statement(Statement* stmt) {
       evaluate_statement_while(stmt);
     break;
     case STATEMENT_RETURN:
-      runtime_error(find_token(stmt->ret), "Return statement must be placed inside of a block");
+      evaluate_statement_return(stmt);
     break;
   }
 }
@@ -488,7 +488,10 @@ void evaluation_pretty_print(Value* e) {
       printf("Boolean: %s\n", e->bvalue ? "true" : "false");
     break;
     case EVAL_TYPE_FUN:
-      printf("Function");
+      printf("Function\n");
+    break;
+    case EVAL_TYPE_NIL:
+      printf("Nil\n");
     break;
     case EVAL_TYPE_ERR:
       printf("Error\n");
@@ -497,7 +500,6 @@ void evaluation_pretty_print(Value* e) {
 }
 
 void interpret(Statements stmts) {
-  stack = stack_new();
   scope_new();
 
   for (size_t i = 0; i < stmts.count; ++i) {

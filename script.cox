@@ -1,8 +1,13 @@
-fun pd(msg, n) {
+fun test(msg, n) {
   for (var i = 0; i < n; i = i + 1) {
     print msg;
   }
-  return n;
+
+  if (n > 0) {
+    return n;
+  } else {
+    return "0";
+  }
 }
 
-print pd("hello", 2);
+print test("hello", 0);

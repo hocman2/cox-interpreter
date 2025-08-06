@@ -1,5 +1,8 @@
 #include "value.h"
 
+// All of this complex machinery allows us to define type conversions rather easily
+
+// This macro is used
 #define DEFINE_CONVERT_FN(NAME, OUT_TYPE) \
 const static struct ConvertionFunction CONVERT_##NAME = {EVAL_TYPE_##OUT_TYPE, NAME##_fn};
 
@@ -14,6 +17,10 @@ struct ConvertionTableField {
 };
 
 // CONVERTION FUNCTIONS //
+// To define a conversion function do the following:
+// 1. Write a function with capitalized name INTYPE_TO_OUTTYPE(Value* e)
+// 2. Then call the DEFINE_CONVERT_FN macro to generate a 'struct ConvertionFunction' object automatically
+// 3. In the convertion_table below, you can use the CONVERT_INTYPE_TO_OUTTYPE generated struct as a convertion function
 
 void DOUBLE_TO_BOOL_fn(Value *e) {
   double val = e->dvalue;
@@ -29,6 +36,12 @@ void BOOL_TO_DOUBLE_fn(Value* e) {
 }
 DEFINE_CONVERT_FN(BOOL_TO_DOUBLE, DOUBLE);
 
+void NIL_TO_BOOL_fn(Value* e) {
+  e->type = EVAL_TYPE_BOOL;
+  e->bvalue = false;
+}
+DEFINE_CONVERT_FN(NIL_TO_BOOL, BOOL);
+
 static const struct ConvertionFunction CONVERT_STOP = {0, NULL};
 
 // END CONVERTION FUNCTIONS //
@@ -36,6 +49,7 @@ static const struct ConvertionFunction CONVERT_STOP = {0, NULL};
 static const struct ConvertionTableField convertion_table[] = {
   {EVAL_TYPE_DOUBLE,  {CONVERT_DOUBLE_TO_BOOL, CONVERT_STOP}},
   {EVAL_TYPE_BOOL,    {CONVERT_BOOL_TO_DOUBLE, CONVERT_STOP}},
+  {EVAL_TYPE_NIL,     {CONVERT_NIL_TO_BOOL, CONVERT_STOP}},
   {0, {CONVERT_STOP}},
 };
 
