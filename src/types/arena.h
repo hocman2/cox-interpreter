@@ -53,7 +53,7 @@ static void* arena_alloc(Arena* a, size_t sz) {
 }
 
 /// Reverses the last allocation, making the data writable again
-static void arena_pop(Arena* a, size_t sz) {
+static void arena_pop(Arena* a) {
   a->offset -= a->last_alloc_sz;
 }
 
