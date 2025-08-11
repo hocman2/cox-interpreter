@@ -2,14 +2,36 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "../types/arena.h"
 #include "../types/vector.h"
+#include "../types/ref_count.h"
 
 #define MAX_SCOPES 256
 
 static Arena scope_alloc;
-static Scope* curr_scope = NULL;
+static ScopeRef curr_scope = NULL;
+
+ScopeRef scope_get_ref() { 
+  ref_count_incr(*curr_scope);
+  return curr_scope;
+}
+
+ScopeRef scope_new_ref(Scope* s) {
+  ref_count_incr(*s);
+  return s;
+}
+
+// Same as below but the name makes the usage more clear
+ScopeRef scope_copy_ref(ScopeRef s) {
+  ref_count_incr(*s);
+  return s;
+}
+
+void scope_release_ref(ScopeRef ref) {
+  ref_count_decr(*ref);
+}
 
 void scope_new() {
   const size_t ID_INITIAL_CAP = 10;
@@ -20,10 +42,20 @@ void scope_new() {
     scopes_init = true;
   }
 
-  Scope* upper_scope = curr_scope;
-  curr_scope = arena_alloc(&scope_alloc, sizeof(Scope));
-  curr_scope->upper = upper_scope;
-  vector_new((*curr_scope), ID_INITIAL_CAP); 
+  Scope* new = arena_alloc(&scope_alloc, sizeof(Scope));
+  ref_count_new(*new, scope_free);
+  vector_new(*new, ID_INITIAL_CAP); 
+
+  ScopeRef new_ref = scope_new_ref(new);
+
+  if (curr_scope) {
+    new_ref->upper = scope_copy_ref(curr_scope);
+    scope_release_ref(curr_scope);
+  }
+
+  // Same as curr_scope = new_ref technically
+  curr_scope = scope_copy_ref(new_ref);
+  scope_release_ref(new_ref);
 }
 
 static StoredValue* _scope_get_ident_recursive(Scope* s, StringView name) {
@@ -75,17 +107,46 @@ bool scope_replace(StringView name, const Value* value) {
 }
 
 
-Value* scope_get_val(StringView name) {
+ValueRef scope_get_val_ref(StringView name) {
   Scope* s = curr_scope;
   StoredValue* id = _scope_get_ident_recursive(s, name);
   if (id) return &(id->value);
   else return NULL;
 }
 
-void scope_pop() {
+Value scope_get_val_copy(StringView name) {
   Scope* s = curr_scope;
+  StoredValue* id = _scope_get_ident_recursive(s, name);
+  if (id) return value_copy(&id->value);
+  else return value_new_err();
+}
 
-  curr_scope = s->upper;
-  vector_free((*s));
-  arena_pop(&scope_alloc, sizeof(Arena));
+void scope_pop() {
+  for (size_t i = 0; i < curr_scope->count; ++i) {
+    StoredValue* v = curr_scope->xs + i;
+    value_scopeexit(&v->value);
+  }
+
+  if (!curr_scope->upper) {
+    // Global scope is popped, force the free
+    arena_free(&scope_alloc);
+    scope_free(curr_scope);
+    curr_scope = NULL;
+  } else {
+    ScopeRef upper = scope_copy_ref(curr_scope->upper);
+    scope_release_ref(curr_scope);
+
+    // We can be memory economic and reuse the memory location on next scope_new
+    if (curr_scope->ref_count == 0) {
+      arena_pop(&scope_alloc);
+    }
+
+    curr_scope = scope_copy_ref(upper);
+    scope_release_ref(upper);
+  }
+}
+
+void scope_free(Scope* s) {
+  if (!s) return;
+  vector_free(*s);
 }
