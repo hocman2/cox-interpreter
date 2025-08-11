@@ -1,4 +1,6 @@
 #include "value.h"
+#include "ref_count.h"
+#include "../interpreter/scope.h"
 
 // All of this complex machinery allows us to define type conversions rather easily
 
@@ -95,4 +97,68 @@ bool convert_to(Value* e, enum ValueType to_type) {
   }
 
   return false;
+}
+
+Value value_new_double(double val) {
+  Value e;
+  e.type = EVAL_TYPE_DOUBLE;
+  e.dvalue = val;
+  return e;
+}
+
+Value value_new_stringview(StringView sv) {
+  Value e;
+  e.type = EVAL_TYPE_STRING_VIEW;
+  e.svvalue = sv;
+  return e;
+}
+
+Value value_new_bool(bool val) {
+  Value e;
+  e.type = EVAL_TYPE_BOOL;
+  e.bvalue = val;
+  return e;
+}
+
+Value value_new_err() {
+  return (Value){EVAL_TYPE_ERR};
+}
+
+Value value_new_nil() {
+  return (Value){EVAL_TYPE_NIL};
+}
+
+Value value_new_fun(const struct StatementFunDecl* fundecl, ScopeRef capture) {
+  struct FunctionValue fnval = {0};
+  fnval.body = fundecl->body;
+  fnval.capture = capture;
+  vector_copy(fnval.params, fundecl->params);
+
+  Value e;
+  e.type = EVAL_TYPE_FUN;
+  e.fnvalue = fnval;
+  return e; 
+}
+
+Value value_copy(Value* v) {
+  switch (v->type) {
+    case EVAL_TYPE_FUN: {
+      Value fn = *v;
+      fn.fnvalue.capture = scope_copy_ref(v->fnvalue.capture);
+      return fn;
+    }
+    break;
+    default:
+    return *v;
+  }
+}
+
+void value_scopeexit(Value* v) {
+  switch (v->type) {
+    case EVAL_TYPE_FUN:
+      scope_release_ref(v->fnvalue.capture);
+    break;
+    default: 
+    break;
+  }
 }
