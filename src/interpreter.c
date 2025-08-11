@@ -11,23 +11,36 @@
 #include <math.h>
 #include <setjmp.h>
 
+// Small data structure that stores return value of a function across nested recursive calls
 struct PendingReturn {
   Value value;
-  bool env_init;
+  bool jmp_buf_init;
+  bool should_return;
   jmp_buf env;
 };
-static struct PendingReturn pending_return = {{EVAL_TYPE_NIL}, false}; 
+static struct PendingReturn pending_return = {{EVAL_TYPE_NIL}, false, false}; 
+static Value take_return() {
+  pending_return.jmp_buf_init = false;
+  pending_return.should_return = false;
+  Value ret = pending_return.value;
+  pending_return.value = value_new_nil();
+  return ret;
+}
+static void set_return(Value v) {
+  pending_return.should_return = true;
+  pending_return.value = v;
+}
+
+static bool should_return() {
+  return pending_return.should_return && pending_return.jmp_buf_init;
+}
 
 static Value evaluate_expression(Expression* expr);
 static void evaluate_statement(Statement* stmt);
 
 static Value evaluate_expression_literal_string(Expression* expr) {
   assert(expr->type == EXPRESSION_LITERAL && expr->literal.type == TOKEN_TYPE_STRING);
-
-  Value e;
-  e.type = EVAL_TYPE_STRING_VIEW;
-  e.svvalue = expr->literal.content;
-  return e;
+  return value_new_stringview(expr->literal.content);
 }
 
 static Value evaluate_expression_literal_double(Expression* expr) {
@@ -47,10 +60,7 @@ static Value evaluate_expression_literal_double(Expression* expr) {
     val = num.whole + num.decimal / pow(10, numdigits);
   }
 
-  Value e;
-  e.type = EVAL_TYPE_DOUBLE;
-  e.dvalue = val;
-  return e;
+  return value_new_double(val);
 }
 
 static Value evaluate_expression_group(Expression* expr) {
@@ -63,24 +73,26 @@ static Value evaluate_expression_call(Expression* expr) {
   Value* fnvalue; 
   Expression* callee_expr = expr->call.callee;
 
+  // Resolve the callee as a scope value or an callable expression
   if (
     callee_expr->type == EXPRESSION_LITERAL && 
     callee_expr->literal.type == TOKEN_TYPE_IDENTIFIER
   ) {
-    fnvalue = scope_get_val(callee_expr->literal.lexeme);
+    fnvalue = scope_get_val_ref(callee_expr->literal.lexeme);
     if (fnvalue == NULL) {
       runtime_error(find_token(callee_expr), "Unresolved identifier as function name");
-      return (Value){EVAL_TYPE_ERR};
+      return value_new_err();
     }
   } else {
     fnvalue_evaluated = evaluate_expression(callee_expr);
     fnvalue = &fnvalue_evaluated;
     if (fnvalue->type != EVAL_TYPE_FUN) {
       runtime_error(find_token(callee_expr), "Expression does not evaluate to a callable");
-      return (Value){EVAL_TYPE_ERR};
+      return value_new_err();
     }
   }
 
+  // Check arguments arity
   struct FunctionValue* fn = &fnvalue->fnvalue;
   if (expr->call.args.count < fn->params.count) {
     char errmsg[1024] = "Missing arguments: ";
@@ -96,53 +108,56 @@ static Value evaluate_expression_call(Expression* expr) {
     }
     snprintf(errmsg + cursor, strlen(" in function call") + 1, " in function call");
     runtime_error(&expr->call.open_paren, errmsg);
-    return (Value){EVAL_TYPE_ERR};
+    return value_new_err();
   } else if (expr->call.args.count > fn->params.count) {
     runtime_error(&expr->call.open_paren, "Extraneous arguments in function call");
-    return (Value){EVAL_TYPE_ERR};
+    return value_new_err();
   }
 
   scope_new();
+  // bind the parameters
   for (size_t i = 0; i < fn->params.count; ++i) {
     StringView param_name = fn->params.xs[i];
     Value arg = evaluate_expression(expr->call.args.xs[i]);
     scope_insert(param_name, &arg);
   }
 
+  // emit the call
+  Value ret;
   if (setjmp(pending_return.env) == 0) {
-    pending_return.env_init = true;
+    pending_return.jmp_buf_init = true;
     evaluate_statement(fn->body);
-    return (Value){EVAL_TYPE_NIL};
+    // Default return value if no return statement is encountered
+    ret = value_new_nil();
   } else {
-    pending_return.env_init = false;
-    Value ret = pending_return.value;
-    pending_return.value = (Value){EVAL_TYPE_NIL};
-    return ret;
+    ret = take_return();
   }
+
+  scope_pop();
+  return ret;
 }
 
 static Value evaluate_expression_unary(Expression* expr) {
   assert(expr->type == EXPRESSION_UNARY);
-
-  Value e;
 
   Value right = evaluate_expression(expr->unary.child);
   switch (expr->unary.operator.type) {
     case TOKEN_TYPE_MINUS:
       if (!convert_to(&right, EVAL_TYPE_DOUBLE)) {
         runtime_error(find_token(expr->unary.child), "Unary operation not permitted: operand is not a number");
-        Value e = {EVAL_TYPE_ERR};
-        return e;
+        return value_new_err();
       }
 
-      e.type = EVAL_TYPE_DOUBLE;
-      e.dvalue = -right.dvalue;
+      return value_new_double(-right.dvalue);
     break;
 
     case TOKEN_TYPE_BANG:
-      e.type = EVAL_TYPE_BOOL;
-      convert_to(&right, EVAL_TYPE_BOOL);
-      e.bvalue = !right.bvalue;
+      if (!convert_to(&right, EVAL_TYPE_BOOL)) {
+        runtime_error(find_token(expr->unary.child), "Unary operation not permitted: operand is not convertible to boolean");
+        return value_new_err();
+      }
+
+      return value_new_bool(!right.bvalue);
     break;
 
     default:
@@ -151,9 +166,11 @@ static Value evaluate_expression_unary(Expression* expr) {
       break;
   }
 
-  return e;
+  // unreachable
+  return value_new_nil();
 }
 
+// helper function
 static Value binary_eval_member(Expression* expr, bool eval_left, enum ValueType expected_type) {
   Expression* to_eval = (eval_left) ? expr->binary.left : expr->binary.right;
   Value eval = evaluate_expression(to_eval);
@@ -165,8 +182,7 @@ static Value binary_eval_member(Expression* expr, bool eval_left, enum ValueType
       (eval_left) ? "left" : "right", eval_type_to_str(expected_type)
     );
 
-    Value e = {EVAL_TYPE_ERR};
-    return e;
+    return value_new_err();
   }
 
   return eval;
@@ -291,8 +307,7 @@ static Value evaluate_expression_assignment(Expression* expr) {
 
   if (!scope_replace(lexeme, &rhs)) {
     runtime_error(&expr->assignment.name, "Assignement failed. Variable must be declared with the 'var' keyword first"); 
-    Value e = {EVAL_TYPE_ERR};
-    return e;
+    return value_new_err();
   }
 
   // returning it's now own stored value allows for chain assignments
@@ -318,15 +333,12 @@ static Value evaluate_expression(Expression* expr) {
         case TOKEN_TYPE_NUMBER:
           return evaluate_expression_literal_double(expr);
         case TOKEN_TYPE_IDENTIFIER: {
-          Value* val = scope_get_val(expr->literal.lexeme);
-          if (val == NULL) {
+          Value val = scope_get_val_copy(expr->literal.lexeme);
+          if (val.type == EVAL_TYPE_ERR) {
             StringView lexeme = expr->literal.lexeme;
             runtime_error(NULL, "Unresolved identifier: "SV_Fmt, SV_Fmt_arg(lexeme));
-            Value e = {EVAL_TYPE_ERR};
-            return e;
-          } else {
-            return *val;
           }
+          return val;
         }
         break;
         case TOKEN_TYPE_KEYWORD:
@@ -366,7 +378,8 @@ static Value evaluate_expression(Expression* expr) {
 }
 
 static void evaluate_statement_expr(Statement* stmt) {
-  evaluate_expression(stmt->expr);
+  Value v = evaluate_expression(stmt->expr);
+  value_scopeexit(&v);
 }
 
 static void evaluate_statement_print(Statement* stmt) {
@@ -374,6 +387,7 @@ static void evaluate_statement_print(Statement* stmt) {
 
   // have some better printing in the future
   evaluation_pretty_print(&e);
+  value_scopeexit(&e);
 }
 
 static void evaluate_statement_var_decl(Statement* stmt) {
@@ -382,13 +396,7 @@ static void evaluate_statement_var_decl(Statement* stmt) {
 }
 
 static void evaluate_statement_fun_decl(Statement* stmt) {
-  struct FunctionValue fnval = {0};
-  fnval.body = stmt->fun_decl.body; 
-  vector_copy(fnval.params, stmt->fun_decl.params);
-
-  Value fn = {0};
-  fn.type = EVAL_TYPE_FUN;
-  fn.fnvalue = fnval;
+  Value fn = value_new_fun(&stmt->fun_decl, scope_get_ref());
   scope_insert(stmt->fun_decl.identifier, &fn);
 }
 
@@ -397,6 +405,11 @@ static void evaluate_statement_block(Statement* stmt) {
   for (size_t i = 0; i < stmt->block.count; ++i) {
     Statement* s = stmt->block.xs + i;
     evaluate_statement(s);   
+
+    if (should_return()) {
+      scope_pop();
+      longjmp(pending_return.env, 1);
+    }
   }
   scope_pop();
 }
@@ -415,13 +428,17 @@ static void evaluate_statement_conditional(Statement* stmt) {
     Value e = evaluate_expression(condition);
     if (!convert_to(&e, EVAL_TYPE_BOOL)) {
       runtime_error(NULL, "If statement condition can't be evaluated as boolean");
-      return;
+      goto cleanup;
     }
 
     if(e.bvalue) {
       evaluate_statement(b->branch);
-      return;
+      goto cleanup;
     }
+
+  cleanup:
+    value_scopeexit(&e);
+    return;
   }
 }
 
@@ -430,28 +447,32 @@ static void evaluate_statement_while(Statement* stmt) {
 
   if (!convert_to(&e, EVAL_TYPE_BOOL)) {
     runtime_error(NULL, "While loop condition does not evaluate to bool");
-    return;
+    goto cleanup;
   }
 
   bool iterate = e.bvalue;
   while (iterate) {
     evaluate_statement(stmt->while_loop.body);
+
+    value_scopeexit(&e);
     e = evaluate_expression(stmt->while_loop.condition);
     
-    // i believe it's necessary because variables might change type
     if (!convert_to(&e, EVAL_TYPE_BOOL)) {
       runtime_error(NULL, "While loop condition does not evaluate to bool");
-      return;
+      goto cleanup;
     }
 
     iterate = e.bvalue;
   }
+
+cleanup:
+  value_scopeexit(&e);
+  return;
 }
 
 static void evaluate_statement_return(Statement* stmt) {
-  if (pending_return.env_init) {
-    pending_return.value = evaluate_expression(stmt->ret);
-    longjmp(pending_return.env, 1);
+  if (pending_return.jmp_buf_init) {
+    set_return(evaluate_expression(stmt->ret));
   } else {
     runtime_error(find_token(stmt->ret), "Return statement must be used inside a function body");
   }
@@ -498,10 +519,14 @@ void evaluation_pretty_print(Value* e) {
       printf("Boolean: %s\n", e->bvalue ? "true" : "false");
     break;
     case EVAL_TYPE_FUN:
-      printf("Function\n");
+      printf("Function(");
+      for (size_t i = 0; i < e->fnvalue.params.count; ++i) {
+        printf(SV_Fmt, SV_Fmt_arg(e->fnvalue.params.xs[i]));
+      }
+      printf(")\n");
     break;
     case EVAL_TYPE_NIL:
-      printf("Nil\n");
+      printf("NIL\n");
     break;
     case EVAL_TYPE_ERR:
       printf("Error\n");

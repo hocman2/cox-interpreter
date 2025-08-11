@@ -1,13 +1,11 @@
-fun test(msg, n) {
-  for (var i = 0; i < n; i = i + 1) {
-    print msg;
+fun makeCounter() {
+  var i = 0;
+  fun counter() {
+    print i;
   }
 
-  if (n > 0) {
-    return n;
-  } else {
-    return "0";
-  }
+  return counter;
 }
 
-print test("hello", 0);
+var counter = makeCounter();
+counter();
