@@ -20,7 +20,7 @@ struct Scope {
   size_t ref_count;
   void (*ref_count_free)(struct Scope*);
 
-  // dynamic array data
+  // dynamic array data for storedvalues, should be in its own datastructure
   size_t capacity;
   size_t count;
   StoredValue* xs;
