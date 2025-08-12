@@ -114,6 +114,7 @@ static Value evaluate_expression_call(Expression* expr) {
     return value_new_err();
   }
 
+  scope_swap(fn->capture);
   scope_new();
   // bind the parameters
   for (size_t i = 0; i < fn->params.count; ++i) {
@@ -134,6 +135,7 @@ static Value evaluate_expression_call(Expression* expr) {
   }
 
   scope_pop();
+  scope_restore();
   return ret;
 }
 

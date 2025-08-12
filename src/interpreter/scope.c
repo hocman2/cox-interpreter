@@ -7,11 +7,13 @@
 #include "../types/arena.h"
 #include "../types/vector.h"
 #include "../types/ref_count.h"
+#include "scope_ref.h"
 
 #define MAX_SCOPES 256
 
 static Arena scope_alloc;
 static ScopeRef curr_scope = NULL;
+static ScopeRef sided_scope = NULL;
 
 ScopeRef scope_get_ref() { 
   ref_count_incr(*curr_scope);
@@ -56,6 +58,22 @@ void scope_new() {
   // Same as curr_scope = new_ref technically
   curr_scope = scope_copy_ref(new_ref);
   scope_release_ref(new_ref);
+}
+
+void scope_swap(ScopeRef new) {
+  if (!curr_scope) assert(false && "Attempted to scope swap with NULL curr_scope");
+  if (!new) assert(false && "Attempted to scope swap with NULL new scope");
+
+  sided_scope = scope_copy_ref(curr_scope);
+  scope_release_ref(curr_scope);
+
+  curr_scope = scope_copy_ref(new);
+}
+
+void scope_restore() {
+  curr_scope = scope_copy_ref(sided_scope);
+  scope_release_ref(sided_scope);
+  sided_scope = NULL;
 }
 
 static StoredValue* _scope_get_ident_recursive(Scope* s, StringView name) {

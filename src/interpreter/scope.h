@@ -30,11 +30,13 @@ ScopeRef scope_get_ref();
 ScopeRef scope_copy_ref(ScopeRef s);
 void scope_release_ref(ScopeRef s);
 void scope_new();
+void scope_swap(ScopeRef new);
 void scope_insert(StringView name, const Value* value);
 bool scope_replace(StringView name, const Value* value);
 ValueRef scope_get_val_ref(StringView name);
 Value scope_get_val_copy(StringView name);
 void scope_pop();
+void scope_restore();
 void scope_free(Scope* s);
 
 #endif
