@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "launch_context.h"
 #include "lexer.h"
 #include "parser.h"
 #include "interpreter.h"
@@ -21,9 +22,14 @@ int main(int argc, char *argv[]) {
 
   const char *command = argv[1];
   const char* file_contents = read_file_contents(argv[2]);
+  char** options = argv + 3;
 
   if (file_contents == NULL) {
     exit(1);
+  }
+
+  if (argc > 3) {
+    launch_ctx_new(options, argc - 3);
   }
 
   int return_code = 0;
