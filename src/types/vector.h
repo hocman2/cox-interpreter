@@ -10,6 +10,11 @@ do { \
   (v).xs = malloc(cap * sizeof(*(v).xs)); \
 } while (0)
 
+#define vector_empty(v) \
+do { \
+  (v).count = 0; \
+} while (0)
+
 #define vector_push(v, x) \
 do { \
   if ((v).count == (v).capacity) { \

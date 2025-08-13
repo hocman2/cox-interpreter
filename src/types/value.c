@@ -128,11 +128,15 @@ Value value_new_nil() {
   return (Value){EVAL_TYPE_NIL};
 }
 
-Value value_new_fun(const struct StatementFunDecl* fundecl, ScopeRef capture) {
+Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture) {
   struct FunctionValue fnval = {0};
-  fnval.body = fundecl->body;
+  fnval.body = body;
   fnval.capture = capture;
-  vector_copy(fnval.params, fundecl->params);
+
+  vector_new(fnval.params, num_params);
+  for (size_t i = 0; i < num_params; ++i) {
+    vector_push(fnval.params, params[i]);
+  }
 
   Value e;
   e.type = EVAL_TYPE_FUN;

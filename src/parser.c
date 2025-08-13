@@ -15,7 +15,7 @@ static struct Parser parser;
 
 Token* find_token(Expression* expr) {
   switch (expr->type) {
-    case EXPRESSION_EVALUATED:
+    case EXPRESSION_STATIC:
       return NULL;
     case EXPRESSION_LITERAL:
       return &expr->literal;
@@ -27,6 +27,8 @@ Token* find_token(Expression* expr) {
       return find_token(expr->unary.child);
     case EXPRESSION_ASSIGNMENT:
       return &expr->assignment.name;
+    case EXPRESSION_ANON_FUN:
+      return expr->anon_fun.fun_kw;
     case EXPRESSION_BINARY:
       // a choice must be made ...
       return find_token(expr->binary.left);
@@ -198,23 +200,16 @@ static bool is_decl_statement(struct TokensCursor* cursor) {
 
 Expression* static_expr_bool(bool value) {
   Expression* e = arena_alloc(&parser.alloc, sizeof(Expression));
-  e->type = EXPRESSION_EVALUATED;
-  Value eval = {0};
-  eval.type = EVAL_TYPE_BOOL;
-  eval.bvalue = value;
-  e->evaluated = eval;
+  e->type = EXPRESSION_STATIC;
+  e->evaluated = value_new_bool(value);
   return e;
 }
-
-static Expression* parse_expression(struct TokensCursor* cursor);
-static Statement* parse_statement(struct TokensCursor* cursor);
 
 static void set_panic(struct TokensCursor* cursor) {
   parser.panic = true;
   // unwind the stack, ditching the currently parsed statement
   longjmp(parse_error_jump, 1);
 }
-
 
 // Consume a token, failure to do so interrupts the current statement's parsing and logs error
 static Token* consume(struct TokensCursor* cursor, enum TokenType expected_type, const char* error_msg) {
@@ -239,6 +234,10 @@ static void consume_keyword(struct TokensCursor* cursor, enum ReservedKeywordTyp
   }
 }
 
+static Expression* parse_expression(struct TokensCursor* cursor);
+static Statement* parse_statement(struct TokensCursor* cursor);
+static Statement* parse_statement_block(struct TokensCursor* cursor);
+
 static Expression* parse_primary(struct TokensCursor* cursor) {
   if (is_at_end(cursor)) return NULL;
 
@@ -246,9 +245,69 @@ static Expression* parse_primary(struct TokensCursor* cursor) {
 
   Token* token = token_at(cursor);
   switch (token->type) {
-    case TOKEN_TYPE_STRING:
     case TOKEN_TYPE_KEYWORD:
+      switch (token->keyword) {
+        // Parse anonymous function
+        case RESERVED_KEYWORD_FUN:
+          expr->type = EXPRESSION_ANON_FUN;
+          expr->anon_fun.fun_kw = token;
+
+          advance(cursor);
+          consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Expected opening parentheses after 'fun' keyword");
+
+          if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) {
+            vector_empty(expr->anon_fun.params);
+          } else {
+            vector_new(expr->anon_fun.params, 1);
+
+            // Parse params
+            Token* t = token_at(cursor);
+            while (!is_at_end(cursor)) {
+              Token* param = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expected identifier as function parameter");
+              vector_push(expr->anon_fun.params, param->lexeme);
+              if (is_at_end(cursor) || token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) break;
+              else {
+                consume(cursor, TOKEN_TYPE_COMMA, "Expected ',' separator between function parameters");
+                t = token_at(cursor);
+              }
+            }
+          }
+
+          consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Expected closing parentheses after fun parameters list");
+
+          // Parse body
+          if (token_at(cursor)->type != TOKEN_TYPE_LEFT_BRACE) {
+            syntax_error(token_at(cursor), "Expected opening brace after function definition");
+            set_panic(cursor);
+            return NULL;
+          }
+          expr->anon_fun.body = parse_statement_block(advance(cursor));
+
+          break;
+        case RESERVED_KEYWORD_TRUE:
+          expr->type = EXPRESSION_STATIC;
+          expr->evaluated = value_new_bool(true);
+          break;
+        case RESERVED_KEYWORD_FALSE:
+          expr->type = EXPRESSION_STATIC;
+          expr->evaluated = value_new_bool(false);
+          break;
+        case RESERVED_KEYWORD_NIL:
+          expr->type = EXPRESSION_STATIC;
+          expr->evaluated = value_new_nil();
+          break;
+        default:
+          syntax_error(token, "Unexpected keyword "SV_Fmt, SV_Fmt_arg(token->lexeme));
+          set_panic(cursor);
+          return NULL;
+      }
+      break;
     case TOKEN_TYPE_IDENTIFIER:
+      if (strncmp(token->lexeme.str, "fn", 2) == 0) {
+        syntax_warning(token, "'fn' is not a valid keyword, perhaps you meant to use 'fun' ?");
+      }
+      // Do not break here !! We want to leak to TOKEN_TYPE_NUMBER case
+    case TOKEN_TYPE_STRING:
     case TOKEN_TYPE_NUMBER:
       expr->type = EXPRESSION_LITERAL;
       expr->literal = *token;
@@ -277,16 +336,15 @@ static Expression* parse_primary(struct TokensCursor* cursor) {
 }
 
 static void parse_arguments(struct TokensCursor* cursor, struct CallArguments* oArgs) {
-  vector_new(*oArgs, 1);
-
   advance(cursor);
   if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) {
+    vector_empty(*oArgs);
     return;
   }
 
+  vector_new(*oArgs, 1);
   while (true) {
     vector_push(*oArgs, parse_expression(cursor));
-
     if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) break;
     else consume(cursor, TOKEN_TYPE_COMMA, "Expected comma as argument separator");
   }
@@ -471,26 +529,30 @@ static Statement* parse_statement_var_decl(struct TokensCursor* cursor) {
   return stmt;
 }
 
-static Statement* parse_statement_block(struct TokensCursor* cursor);
 static Statement* parse_statement_fun_decl(struct TokensCursor* cursor) {
   Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expect identifier after 'fun' keyword");
-  consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Missing opening parentheses after function identifier");
 
   Statement* stmt = arena_alloc(&parser.alloc, sizeof(Statement));
   stmt->type = STATEMENT_FUN_DECL;
   stmt->fun_decl.identifier = identifier->lexeme;
-  vector_new(stmt->fun_decl.params, 1);
 
-  // parse params
-  Token* t = token_at(cursor);
-  while (t->type != TOKEN_TYPE_RIGHT_PAREN) {
-    Token* param = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expected identifier as function parameter");
-    vector_push(stmt->fun_decl.params, param->lexeme);
 
-    if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) break;
-    else {
-      consume(cursor, TOKEN_TYPE_COMMA, "Expected ',' separator between function parameters");
-      t = token_at(cursor);
+  consume(cursor, TOKEN_TYPE_LEFT_PAREN, "Missing opening parentheses after function identifier");
+  if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) {
+    vector_empty(stmt->fun_decl.params);
+  } else {
+    vector_new(stmt->fun_decl.params, 1);
+    // parse params
+    Token* t = token_at(cursor);
+    while (!is_at_end(cursor)) {
+      Token* param = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expected identifier as function parameter");
+      vector_push(stmt->fun_decl.params, param->lexeme);
+
+      if (token_at(cursor)->type == TOKEN_TYPE_RIGHT_PAREN) break;
+      else {
+        consume(cursor, TOKEN_TYPE_COMMA, "Expected ',' separator between function parameters");
+        t = token_at(cursor);
+      }
     }
   }
 
@@ -778,7 +840,16 @@ void expression_pretty_print(Expression* expr) {
       expression_pretty_print(expr->assignment.right);
       printf(")");
     break;
-    case EXPRESSION_EVALUATED:
+    case EXPRESSION_ANON_FUN:
+      printf("(Anonymous function(");
+      for (size_t i = 0; i < expr->anon_fun.params.count; ++i) {
+        printf(SV_Fmt, SV_Fmt_arg(expr->anon_fun.params.xs[i]));
+        if (i < expr->anon_fun.params.count-1)
+          printf(", ");
+      }
+      printf("))");
+    break;
+    case EXPRESSION_STATIC:
      printf("(Static expression)");
     break;
     default:

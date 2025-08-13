@@ -11,9 +11,15 @@
 
 #define MAX_SCOPES 256
 
+struct SidedScopes {
+  ScopeRef* xs;
+  size_t capacity;
+  size_t count;
+};
+
 static Arena scope_alloc;
 static ScopeRef curr_scope = NULL;
-static ScopeRef sided_scope = NULL;
+static struct SidedScopes sided_scopes;
 
 ScopeRef scope_get_ref() { 
   ref_count_incr(*curr_scope);
@@ -31,16 +37,24 @@ ScopeRef scope_copy_ref(ScopeRef s) {
   return s;
 }
 
+// Useless but makes intent clearer when using direct assignment
+// avoid having to do a copy_ref/release_ref combo
+inline ScopeRef scope_move_ref(ScopeRef s) {
+  return s;
+}
+
 void scope_release_ref(ScopeRef ref) {
   ref_count_decr(*ref);
 }
 
 void scope_new() {
   const size_t ID_INITIAL_CAP = 10;
+  const size_t SIDED_INITIAL_CAP = 16;
 
   static bool scopes_init = false;
   if (!scopes_init) {
     scope_alloc = arena_init(sizeof(Scope) * MAX_SCOPES, alignof(Scope));
+    vector_new(sided_scopes, SIDED_INITIAL_CAP);
     scopes_init = true;
   }
 
@@ -64,16 +78,17 @@ void scope_swap(ScopeRef new) {
   if (!curr_scope) assert(false && "Attempted to scope swap with NULL curr_scope");
   if (!new) assert(false && "Attempted to scope swap with NULL new scope");
 
-  sided_scope = scope_copy_ref(curr_scope);
-  scope_release_ref(curr_scope);
-
+  vector_push(sided_scopes, scope_move_ref(curr_scope));
   curr_scope = scope_copy_ref(new);
 }
 
 void scope_restore() {
-  curr_scope = scope_copy_ref(sided_scope);
-  scope_release_ref(sided_scope);
-  sided_scope = NULL;
+  assert(sided_scopes.count > 0 && "Attempted to scope_restore() without calling scope_swap first");
+  ScopeRef popped = scope_move_ref(sided_scopes.xs[sided_scopes.count - 1]);
+  vector_pop(sided_scopes);
+
+  scope_release_ref(curr_scope);
+  curr_scope = scope_move_ref(popped);
 }
 
 static StoredValue* _scope_get_ident_recursive(Scope* s, StringView name) {

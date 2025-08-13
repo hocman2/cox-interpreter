@@ -294,6 +294,11 @@ static Value evaluate_expression_binary(Expression* expr) {
   return e;
 }
 
+static Value evaluate_expression_anon_fun(Expression* expr) {
+  Value fn = value_new_fun(expr->anon_fun.body, expr->anon_fun.params.xs, expr->anon_fun.params.count, scope_get_ref());
+  return fn;
+}
+
 static Value evaluate_expression_assignment(Expression* expr) {
   Value rhs = evaluate_expression(expr->assignment.right);
   StringView lexeme = expr->assignment.name.lexeme;
@@ -309,7 +314,7 @@ static Value evaluate_expression_assignment(Expression* expr) {
 
 static Value evaluate_expression(Expression* expr) {
   switch (expr->type) {
-    case EXPRESSION_EVALUATED:
+    case EXPRESSION_STATIC:
       return expr->evaluated;
     case EXPRESSION_UNARY:
       return evaluate_expression_unary(expr);
@@ -363,6 +368,9 @@ static Value evaluate_expression(Expression* expr) {
     case EXPRESSION_ASSIGNMENT:
       return evaluate_expression_assignment(expr);
     break;
+    case EXPRESSION_ANON_FUN:
+      return evaluate_expression_anon_fun(expr);
+    break;
     default:
       fprintf(stderr, "Unimplemented expression type %d", expr->type);
       exit(1);
@@ -389,7 +397,7 @@ static void evaluate_statement_var_decl(Statement* stmt) {
 }
 
 static void evaluate_statement_fun_decl(Statement* stmt) {
-  Value fn = value_new_fun(&stmt->fun_decl, scope_get_ref());
+  Value fn = value_new_fun(stmt->fun_decl.body, stmt->fun_decl.params.xs, stmt->fun_decl.params.count, scope_get_ref());
   scope_insert(stmt->fun_decl.identifier, &fn);
 }
 

@@ -64,7 +64,7 @@ Value value_new_stringview(StringView sv);
 Value value_new_bool(bool val);
 Value value_new_err();
 Value value_new_nil();
-Value value_new_fun(const struct StatementFunDecl* fundecl, ScopeRef capture);
+Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture);
 
 Value value_copy(Value* v);
 void value_scopeexit(Value* v);

@@ -11,7 +11,8 @@ enum ExpressionType {
   EXPRESSION_CALL,
   EXPRESSION_LITERAL,
   EXPRESSION_ASSIGNMENT,
-  EXPRESSION_EVALUATED,
+  EXPRESSION_ANON_FUN,
+  EXPRESSION_STATIC,
 };
 
 typedef struct Expression Expression;
@@ -48,6 +49,18 @@ struct Assignment {
   Expression* right;
 };
 
+struct AnonFunParams {
+  size_t capacity;
+  size_t count;
+  StringView* xs;
+};
+
+struct AnonFun {
+  struct AnonFunParams params;
+  struct Statement* body; 
+  Token* fun_kw;
+};
+
 struct Expression {
   enum ExpressionType type;
   union {
@@ -57,6 +70,7 @@ struct Expression {
     struct Group group;
     struct Call call;
     struct Assignment assignment;
+    struct AnonFun anon_fun;
     Value evaluated;
   };
 };

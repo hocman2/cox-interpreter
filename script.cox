@@ -1,11 +1,7 @@
-fun makeCounter(a) {
-  fun myFunction(b) {
-    return 1;
-  }
-  
-  if (true) {
-    return 0;
-  }
+fun invokeCallback(cb) {
+  return cb();
 }
 
-var counter = makeCounter(0);
+print invokeCallback(fun() { 
+    return "Hello from callback !"; 
+});
