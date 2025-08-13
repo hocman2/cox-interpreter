@@ -1,15 +1,11 @@
-fun makeCounter() {
-  var i = 0;
-  fun counter() {
-    i = i + 1;
-    return i;
+fun makeCounter(a) {
+  fun myFunction(b) {
+    return 1;
   }
-
-  return counter;
+  
+  if (true) {
+    return 0;
+  }
 }
 
-var counter = makeCounter();
-print counter();
-print counter();
-print counter();
-print counter();
+var counter = makeCounter(0);

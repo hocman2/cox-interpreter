@@ -9,18 +9,16 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
-#include <setjmp.h>
 
 // Small data structure that stores return value of a function across nested recursive calls
 struct PendingReturn {
   Value value;
-  bool jmp_buf_init;
+  bool await_return;
   bool should_return;
-  jmp_buf env;
 };
 static struct PendingReturn pending_return = {{EVAL_TYPE_NIL}, false, false}; 
 static Value take_return() {
-  pending_return.jmp_buf_init = false;
+  pending_return.await_return = false;
   pending_return.should_return = false;
   Value ret = pending_return.value;
   pending_return.value = value_new_nil();
@@ -32,7 +30,7 @@ static void set_return(Value v) {
 }
 
 static bool should_return() {
-  return pending_return.should_return && pending_return.jmp_buf_init;
+  return pending_return.should_return && pending_return.await_return;
 }
 
 static Value evaluate_expression(Expression* expr);
@@ -123,16 +121,9 @@ static Value evaluate_expression_call(Expression* expr) {
     scope_insert(param_name, &arg);
   }
 
-  // emit the call
-  Value ret;
-  if (setjmp(pending_return.env) == 0) {
-    pending_return.jmp_buf_init = true;
-    evaluate_statement(fn->body);
-    // Default return value if no return statement is encountered
-    ret = value_new_nil();
-  } else {
-    ret = take_return();
-  }
+  pending_return.await_return = true;
+  evaluate_statement(fn->body);
+  Value ret = take_return();
 
   scope_pop();
   scope_restore();
@@ -408,11 +399,10 @@ static void evaluate_statement_block(Statement* stmt) {
     Statement* s = stmt->block.xs + i;
     evaluate_statement(s);   
 
-    if (should_return()) {
-      scope_pop();
-      longjmp(pending_return.env, 1);
-    }
+    if (should_return())
+      break;
   }
+
   scope_pop();
 }
 
@@ -473,7 +463,7 @@ cleanup:
 }
 
 static void evaluate_statement_return(Statement* stmt) {
-  if (pending_return.jmp_buf_init) {
+  if (pending_return.await_return) {
     set_return(evaluate_expression(stmt->ret));
   } else {
     runtime_error(find_token(stmt->ret), "Return statement must be used inside a function body");
