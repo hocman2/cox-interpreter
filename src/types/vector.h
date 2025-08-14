@@ -48,4 +48,13 @@ do { \
   } \
 } while (0)
 
+#define vector_from(des, src) \
+do { \
+  vector_new(des, (src).count); \
+  (des).count = (src).count; \
+  for (size_t i = 0; i < (src).count; ++i) { \
+    (des).xs[i] = (src).xs[i]; \
+  } \
+} while (0)
+
 #endif

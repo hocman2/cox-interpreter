@@ -1,7 +1,10 @@
-fun invokeCallback(cb) {
-  return cb();
-}
+var a = "global";
+{
+  fun showA() {
+    print a;
+  }
 
-print invokeCallback(fun() { 
-    return "Hello from callback !"; 
-});
+  showA();
+  var a = "block";
+  showA();
+}
