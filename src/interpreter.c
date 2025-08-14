@@ -35,6 +35,7 @@ static bool should_return() {
 
 static Value evaluate_expression(Expression* expr);
 static void evaluate_statement(Statement* stmt);
+static void evaluate_statement_block(Statement* stmt);
 
 static Value evaluate_expression_literal_string(Expression* expr) {
   assert(expr->type == EXPRESSION_LITERAL && expr->literal.type == TOKEN_TYPE_STRING);
@@ -122,7 +123,7 @@ static Value evaluate_expression_call(Expression* expr) {
   }
 
   pending_return.await_return = true;
-  evaluate_statement(fn->body);
+  evaluate_statement_block(fn->body);
   Value ret = take_return();
 
   scope_pop();
@@ -402,7 +403,6 @@ static void evaluate_statement_fun_decl(Statement* stmt) {
 }
 
 static void evaluate_statement_block(Statement* stmt) {
-  scope_new();
   for (size_t i = 0; i < stmt->block.count; ++i) {
     Statement* s = stmt->block.xs + i;
     evaluate_statement(s);   
@@ -410,8 +410,6 @@ static void evaluate_statement_block(Statement* stmt) {
     if (should_return())
       break;
   }
-
-  scope_pop();
 }
 
 static void evaluate_statement_conditional(Statement* stmt) {
@@ -493,7 +491,9 @@ static void evaluate_statement(Statement* stmt) {
       evaluate_statement_fun_decl(stmt);
     break;
     case STATEMENT_BLOCK:
+      scope_new();
       evaluate_statement_block(stmt);
+      scope_pop();
     break;
     case STATEMENT_CONDITIONAL:
       evaluate_statement_conditional(stmt);
