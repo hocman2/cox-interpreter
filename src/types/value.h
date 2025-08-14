@@ -66,7 +66,7 @@ Value value_new_err();
 Value value_new_nil();
 Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture);
 
-Value value_copy(Value* v);
+Value value_copy(const Value* v);
 void value_scopeexit(Value* v);
 
 #endif

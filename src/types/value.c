@@ -129,26 +129,29 @@ Value value_new_nil() {
 }
 
 Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture) {
-  struct FunctionValue fnval = {0};
-  fnval.body = body;
-  fnval.capture = capture;
-
-  vector_new(fnval.params, num_params);
-  for (size_t i = 0; i < num_params; ++i) {
-    vector_push(fnval.params, params[i]);
-  }
+  assert(body->type == STATEMENT_BLOCK && "Attempted to create a function value with non block body");
 
   Value e;
   e.type = EVAL_TYPE_FUN;
-  e.fnvalue = fnval;
+  e.fnvalue = (struct FunctionValue){
+    .params = {0},
+    .body = body,
+    .capture = scope_ref_move(capture),
+  };
+
+  vector_new(e.fnvalue.params, num_params);
+  for (size_t i = 0; i < num_params; ++i) {
+    vector_push(e.fnvalue.params, params[i]);
+  }
+
   return e; 
 }
 
-Value value_copy(Value* v) {
+Value value_copy(const Value* v) {
   switch (v->type) {
     case EVAL_TYPE_FUN: {
       Value fn = *v;
-      fn.fnvalue.capture = scope_copy_ref(v->fnvalue.capture);
+      fn.fnvalue.capture = scope_ref_acquire(v->fnvalue.capture);
       return fn;
     }
     break;
@@ -160,7 +163,7 @@ Value value_copy(Value* v) {
 void value_scopeexit(Value* v) {
   switch (v->type) {
     case EVAL_TYPE_FUN:
-      scope_release_ref(v->fnvalue.capture);
+      scope_ref_release(v->fnvalue.capture);
     break;
     default: 
     break;

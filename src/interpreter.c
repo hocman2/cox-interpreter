@@ -296,7 +296,7 @@ static Value evaluate_expression_binary(Expression* expr) {
 }
 
 static Value evaluate_expression_anon_fun(Expression* expr) {
-  Value fn = value_new_fun(expr->anon_fun.body, expr->anon_fun.params.xs, expr->anon_fun.params.count, scope_get_ref());
+  Value fn = value_new_fun(expr->anon_fun.body, expr->anon_fun.params.xs, expr->anon_fun.params.count, scope_ref_get_current());
   return fn;
 }
 
@@ -395,11 +395,13 @@ static void evaluate_statement_print(Statement* stmt) {
 static void evaluate_statement_var_decl(Statement* stmt) {
   Value e = evaluate_expression(stmt->var_decl.expr);
   scope_insert(stmt->var_decl.identifier, &e);
+  value_scopeexit(&e);
 }
 
 static void evaluate_statement_fun_decl(Statement* stmt) {
-  Value fn = value_new_fun(stmt->fun_decl.body, stmt->fun_decl.params.xs, stmt->fun_decl.params.count, scope_get_ref());
+  Value fn = value_new_fun(stmt->fun_decl.body, stmt->fun_decl.params.xs, stmt->fun_decl.params.count, scope_ref_get_current());
   scope_insert(stmt->fun_decl.identifier, &fn);
+  value_scopeexit(&fn);
 }
 
 static void evaluate_statement_block(Statement* stmt) {

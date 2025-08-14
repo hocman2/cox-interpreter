@@ -15,6 +15,7 @@ typedef struct {
 typedef struct Scope Scope;
 
 struct Scope {
+  uint64_t id;
   ScopeRef upper;
 
   size_t ref_count;
@@ -26,9 +27,10 @@ struct Scope {
   StoredValue* xs;
 };
 
-ScopeRef scope_get_ref();
-ScopeRef scope_copy_ref(ScopeRef s);
-void scope_release_ref(ScopeRef s);
+ScopeRef scope_ref_get_current();
+static inline ScopeRef scope_ref_move(ScopeRef s) { return s; }
+ScopeRef scope_ref_acquire(ScopeRef s);
+void scope_ref_release(ScopeRef s);
 void scope_new();
 void scope_swap(ScopeRef new);
 void scope_insert(StringView name, const Value* value);
