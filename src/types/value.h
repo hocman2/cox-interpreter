@@ -56,6 +56,7 @@ static const char* eval_type_to_str(enum ValueType t) {
   }
 }
 
+void value_pretty_print(const Value* v);
 bool is_convertible_to_type(const Value* e, enum ValueType expected); 
 bool convert_to(Value* e, enum ValueType to_type); 
 

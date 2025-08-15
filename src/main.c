@@ -8,7 +8,7 @@
 #include "interpreter.h"
 #include "types/token.h"
 
-const char* read_file_contents(const char* filename);
+const char* read_file_contents(const char* filename, size_t* byte_sz);
 
 int main(int argc, char *argv[]) {
   // Disable output buffering
@@ -21,7 +21,8 @@ int main(int argc, char *argv[]) {
   }
 
   const char *command = argv[1];
-  const char* file_contents = read_file_contents(argv[2]);
+  size_t file_sz;
+  const char* file_contents = read_file_contents(argv[2], &file_sz);
   char** options = argv + 3;
 
   if (file_contents == NULL) {
@@ -34,7 +35,7 @@ int main(int argc, char *argv[]) {
 
   int return_code = 0;
   if (strcmp(command, "tokenize") == 0) {
-    Tokenizer t = tokenizer_new(file_contents);
+    Tokenizer t = tokenizer_new(file_contents, file_sz);
 
     int tokenize_result = 0;
     while(true) {
@@ -53,7 +54,7 @@ int main(int argc, char *argv[]) {
     }
 
   } else if (strcmp(command, "parse") == 0) {
-    Tokenizer t = tokenizer_new(file_contents);
+    Tokenizer t = tokenizer_new(file_contents, file_sz);
 
     Token* tokens;
     size_t num_tokens;
@@ -76,7 +77,7 @@ int main(int argc, char *argv[]) {
     parser_free(&stmts);
     free(tokens);
   } else if (strcmp(command, "interpret") == 0) {
-    Tokenizer t = tokenizer_new(file_contents);
+    Tokenizer t = tokenizer_new(file_contents, file_sz);
 
     Token* tokens;
     size_t num_tokens;
@@ -110,7 +111,9 @@ cleanup:
   return return_code;
 }
 
-const char* read_file_contents(const char* filename) {
+const char* read_file_contents(const char* filename, size_t* byte_sz) {
+  assert(byte_sz && "bytes_sz must be a valid pointer");
+
   FILE *file = fopen(filename, "r");
   if (file == NULL) {
     fprintf(stderr, "Error reading file: %s\n", filename);
@@ -128,8 +131,8 @@ const char* read_file_contents(const char* filename) {
     return NULL;
   }
 
-  size_t bytes_read = fread(file_contents, 1, file_size, file);
-  if (bytes_read < file_size) {
+  *byte_sz = fread(file_contents, 1, file_size, file);
+  if (*byte_sz < file_size) {
     fprintf(stderr, "Error reading file contents\n");
     free(file_contents);
     fclose(file);

@@ -388,7 +388,8 @@ static void evaluate_statement_print(Statement* stmt) {
   Value e = evaluate_expression(stmt->expr);
 
   // have some better printing in the future
-  evaluation_pretty_print(&e);
+  value_pretty_print(&e);
+  printf("\n");
   value_scopeexit(&e);
 }
 
@@ -505,33 +506,6 @@ static void evaluate_statement(Statement* stmt) {
     break;
     case STATEMENT_RETURN:
       evaluate_statement_return(stmt);
-    break;
-  }
-}
-
-void evaluation_pretty_print(Value* e) {
-  switch(e->type) {
-    case EVAL_TYPE_DOUBLE:
-      printf("Double: %f\n", e->dvalue);
-    break;
-    case EVAL_TYPE_STRING_VIEW:
-      printf("String: %.*s\n", (int)e->svvalue.len, e->svvalue.str);
-    break;
-    case EVAL_TYPE_BOOL:
-      printf("Boolean: %s\n", e->bvalue ? "true" : "false");
-    break;
-    case EVAL_TYPE_FUN:
-      printf("Function(");
-      for (size_t i = 0; i < e->fnvalue.params.count; ++i) {
-        printf(SV_Fmt, SV_Fmt_arg(e->fnvalue.params.xs[i]));
-      }
-      printf(")\n");
-    break;
-    case EVAL_TYPE_NIL:
-      printf("NIL\n");
-    break;
-    case EVAL_TYPE_ERR:
-      printf("Error\n");
     break;
   }
 }

@@ -77,6 +77,33 @@ bool is_convertible_to_type(const Value* e, enum ValueType expected) {
   return false;
 }
 
+void value_pretty_print(const Value* e) {
+  switch(e->type) {
+    case EVAL_TYPE_DOUBLE:
+      printf("Double: %f", e->dvalue);
+    break;
+    case EVAL_TYPE_STRING_VIEW:
+      printf("String: %.*s", (int)e->svvalue.len, e->svvalue.str);
+    break;
+    case EVAL_TYPE_BOOL:
+      printf("Boolean: %s", e->bvalue ? "true" : "false");
+    break;
+    case EVAL_TYPE_FUN:
+      printf("Function[%llu](", e->fnvalue.capture->id);
+      for (size_t i = 0; i < e->fnvalue.params.count; ++i) {
+        printf(SV_Fmt, SV_Fmt_arg(e->fnvalue.params.xs[i]));
+      }
+      printf(")");
+    break;
+    case EVAL_TYPE_NIL:
+      printf("NIL");
+    break;
+    case EVAL_TYPE_ERR:
+      printf("Error");
+    break;
+  }
+}
+
 bool convert_to(Value* e, enum ValueType to_type) {
   if (e->type == to_type) {
     return true;

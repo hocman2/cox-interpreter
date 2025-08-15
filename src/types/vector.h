@@ -7,7 +7,7 @@
 do { \
   (v).count = 0; \
   (v).capacity = (cap == 0) ? 1 : cap; \
-  (v).xs = malloc(cap * sizeof(*(v).xs)); \
+  (v).xs = malloc((v).capacity * sizeof(*(v).xs)); \
 } while (0)
 
 #define vector_empty(v) \

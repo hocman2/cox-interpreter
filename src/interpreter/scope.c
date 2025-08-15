@@ -22,6 +22,28 @@ static Arena scope_alloc;
 static ScopeRef curr_scope = NULL;
 static struct SidedScopes sided_scopes;
 
+static void scope_stats(const Scope* s) {
+  assert(s && "Can't print NULL scope");
+  printf("Scope [%llu] (%zu refs, %zu values) %p", s->id, s->ref_count, s->count, s);
+  if (s->count) {
+    printf(" - (");
+    for (size_t i = 0; i < s->count; ++i) {
+      StoredValue* v = s->xs + i;
+      printf(SV_Fmt" -> ", SV_Fmt_arg(v->name));
+      value_pretty_print(&v->value);
+      if (i < s->count - 1) printf(", ");
+    }
+    printf(")\n");
+  } else {
+    printf("\n");
+  }
+
+  if (s->upper) {
+    printf("-> ");
+    scope_stats((const Scope*)s->upper);
+  }
+}
+
 ScopeRef scope_ref_get_current() { 
   ref_count_incr(*curr_scope);
   return curr_scope;
@@ -62,6 +84,8 @@ void scope_new() {
 
   if (curr_scope) {
     new_ref->upper = scope_ref_move(curr_scope);
+  } else {
+    new_ref->upper = NULL;
   }
 
   curr_scope = scope_ref_move(new_ref);
@@ -102,6 +126,22 @@ static StoredValue* _scope_get_ident_recursive(Scope* s, StringView name) {
   else return NULL;
 }
 
+static StoredValue* _scope_get_ident(Scope* s, StringView name) {
+  StoredValue* id = NULL;
+
+  for (size_t i = 0; i < s->count; ++i) {
+    StoredValue* el = s->xs + i;
+    if (el->name.len == name.len) {
+      if (strncmp(el->name.str, name.str, name.len) == 0) {
+        id = el;
+      }
+    }
+  }
+
+  if (id) return id;
+  else return NULL;
+}
+
 static void scope_override_current() {
   Scope* new = arena_alloc(&scope_alloc, sizeof(Scope));
   ref_count_new(*new, scope_free);
@@ -118,19 +158,16 @@ static void scope_override_current() {
 
   ScopeRef old = scope_ref_move(curr_scope);
   curr_scope = scope_ref_move(new_ref);
-
-  if (old->upper) scope_ref_release(old->upper);
-  printf("%llu: %zu\n", old->id, old->ref_count);
   scope_ref_release(old);
 }
 
 void scope_insert(StringView name, const Value* value) {
   scope_override_current();
-  
-  Scope* s = curr_scope;
+
+  Scope* s = (Scope*)curr_scope;
   // Update existing identifier if it already exists
   // as specified by lang spec
-  StoredValue* id_maybe = _scope_get_ident_recursive(s, name);
+  StoredValue* id_maybe = _scope_get_ident(s, name);
   if (id_maybe) {
     id_maybe->value = value_copy(value);
     return;
@@ -147,7 +184,7 @@ void scope_insert(StringView name, const Value* value) {
 bool scope_replace(StringView name, const Value* value) {
   scope_override_current();
 
-  Scope* s = curr_scope;
+  Scope* s = (Scope*)curr_scope;
   StoredValue* id_maybe = _scope_get_ident_recursive(s, name);
 
   if (!id_maybe) {
@@ -160,14 +197,14 @@ bool scope_replace(StringView name, const Value* value) {
 
 
 ValueRef scope_get_val_ref(StringView name) {
-  Scope* s = curr_scope;
+  Scope* s = (Scope*)curr_scope;
   StoredValue* id = _scope_get_ident_recursive(s, name);
   if (id) return &(id->value);
   else return NULL;
 }
 
 Value scope_get_val_copy(StringView name) {
-  Scope* s = curr_scope;
+  Scope* s = (Scope*)curr_scope;
   StoredValue* id = _scope_get_ident_recursive(s, name);
   if (id) return value_copy(&id->value);
   else return value_new_err();
@@ -181,23 +218,18 @@ void scope_pop() {
 
   if (!curr_scope->upper) {
     // Global scope is popped, force the free
-    scope_free(curr_scope);
+    scope_free((Scope*)curr_scope);
     curr_scope = NULL;
     arena_free(&scope_alloc);
   } else {
-    ScopeRef upper = scope_ref_move(curr_scope->upper);
+    ScopeRef upper = scope_ref_acquire(curr_scope->upper);
     scope_ref_release(curr_scope);
-
-    // We can be memory economic and reuse the memory location on next scope_new
-    if (curr_scope->ref_count == 0) {
-      arena_pop(&scope_alloc);
-    }
-
     curr_scope = scope_ref_move(upper);
   }
 }
 
 void scope_free(Scope* s) {
   if (!s) return;
+  if (s->upper) scope_ref_release(s->upper);
   vector_free(*s);
 }

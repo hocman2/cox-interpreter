@@ -13,7 +13,6 @@ typedef struct {
 } StoredValue;
 
 typedef struct Scope Scope;
-
 struct Scope {
   uint64_t id;
   ScopeRef upper;

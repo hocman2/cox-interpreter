@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.13)
 
 project(cox-interpreter)
 set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
 
 file(GLOB_RECURSE SOURCE_FILES src/*.c src/*.h)
 

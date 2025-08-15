@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <assert.h>
 
 #include "types/token.h"
 
@@ -48,9 +49,10 @@ bool alpha_or_underscore_or_digit(char c) {
 }
 
 // -- //
-Tokenizer tokenizer_new(const char* file_contents) {
+Tokenizer tokenizer_new(const char* file_contents, size_t byte_sz) {
   Tokenizer t;
   t.cursor = file_contents;
+  t.end = file_contents + byte_sz;
   t.line = 1;
   return t;
 }
@@ -59,10 +61,15 @@ Tokenizer tokenizer_new(const char* file_contents) {
 // In that case the tokenizer's cursor will be advanced by the appropriate length
 // Otherwise returns false and does not move the cursor
 bool find_token_type(Tokenizer *t, enum TokenType* tt, size_t* token_len) {
+  if (t->cursor > t->end) return false; 
+
   char c = *(t->cursor);
-  char c_next = *(t->cursor + 1);
-  uint16_t code2 = ((uint16_t)c) << 8 | c_next;
   uint16_t code1 = ((uint16_t)c) << 8 | 0;
+  uint16_t code2 = code1;
+  if (t->cursor + 1 < t->end) {
+    char c_next = *(t->cursor + 1);
+    code2 = ((uint16_t)c) << 8 | c_next;
+  } 
 
   for (size_t i = 0; i < TOKEN_TYPE_NUM_FIXED_TOKENS; ++i) {
     TokenLexeme tl = token_lexemes[i];
@@ -79,6 +86,8 @@ bool find_token_type(Tokenizer *t, enum TokenType* tt, size_t* token_len) {
 }
 
 int tokenizer_get_next(Tokenizer *t, Token* o_token) {
+  assert(t->cursor <= t->end && "Tokenizer overflow");
+
   enum TokenType tt;
   size_t token_len;
   if (find_token_type(t, &tt, &token_len)) {
