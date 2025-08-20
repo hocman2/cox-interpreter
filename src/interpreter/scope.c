@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "../types/arena.h"
+#include "../types/allocators/pool.h"
 #include "../types/vector.h"
 #include "../types/ref_count.h"
 #include "scope_ref.h"
@@ -18,7 +18,7 @@ struct SidedScopes {
 };
 
 static uint64_t scope_ids = 0;
-static Arena scope_alloc;
+static Pool scope_alloc;
 static ScopeRef curr_scope = NULL;
 static struct SidedScopes sided_scopes;
 
@@ -70,12 +70,13 @@ void scope_new() {
 
   static bool scopes_init = false;
   if (!scopes_init) {
-    scope_alloc = arena_init(sizeof(Scope) * MAX_SCOPES, alignof(Scope));
+    pool_new(&scope_alloc, sizeof(Scope), MAX_SCOPES);
     vector_new(sided_scopes, SIDED_INITIAL_CAP);
     scopes_init = true;
   }
 
-  Scope* new = arena_alloc(&scope_alloc, sizeof(Scope));
+  Scope* new;
+  pool_alloc(&scope_alloc, (void**)&new);
   new->id = scope_ids++;
   ref_count_new(*new, scope_free);
   vector_new(*new, ID_INITIAL_CAP); 
@@ -143,7 +144,8 @@ static StoredValue* _scope_get_ident(Scope* s, StringView name) {
 }
 
 static void scope_override_current() {
-  Scope* new = arena_alloc(&scope_alloc, sizeof(Scope));
+  Scope* new;
+  pool_alloc(&scope_alloc, (void**)&new);
   ref_count_new(*new, scope_free);
   vector_new(*new, curr_scope->count);
   new->id = scope_ids++;
@@ -220,7 +222,7 @@ void scope_pop() {
     // Global scope is popped, force the free
     scope_free((Scope*)curr_scope);
     curr_scope = NULL;
-    arena_free(&scope_alloc);
+    pool_freeall(&scope_alloc);
   } else {
     ScopeRef upper = scope_ref_acquire(curr_scope->upper);
     scope_ref_release(curr_scope);
@@ -231,5 +233,6 @@ void scope_pop() {
 void scope_free(Scope* s) {
   if (!s) return;
   if (s->upper) scope_ref_release(s->upper);
+  pool_free(&scope_alloc, s);
   vector_free(*s);
 }

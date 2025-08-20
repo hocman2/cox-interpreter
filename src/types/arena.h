@@ -13,7 +13,7 @@ typedef struct {
   size_t last_alloc_sz;
 } Arena;
 
-static uintptr_t align_up(size_t al, uintptr_t a) {
+static inline uintptr_t align_up(size_t al, uintptr_t a) {
   int align_m1 = al-1;
   uintptr_t b = a + align_m1;
   return b & ~align_m1;
