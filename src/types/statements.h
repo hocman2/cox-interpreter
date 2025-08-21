@@ -8,6 +8,7 @@ enum StatementType {
   STATEMENT_PRINT_EXPR,
   STATEMENT_VAR_DECL,
   STATEMENT_FUN_DECL,
+  STATEMENT_CLASS_DECL,
   STATEMENT_BLOCK,
   STATEMENT_CONDITIONAL,
   STATEMENT_WHILE,
@@ -43,6 +44,19 @@ struct StatementFunDecl {
   Statement* body;
 };
 
+typedef struct StatementFunDecl StatementMethodDecl;
+
+struct ClassMethodsDecl {
+  size_t capacity;
+  size_t count;
+  StatementMethodDecl* xs;
+};
+
+struct StatementClassDecl {
+  StringView identifier;
+  struct ClassMethodsDecl methods;
+};
+
 typedef Statements StatementBlock;
 
 struct ConditionalBlock {
@@ -69,6 +83,7 @@ struct Statement {
     StatementExpression expr;
     struct StatementVarDecl var_decl;
     struct StatementFunDecl fun_decl;
+    struct StatementClassDecl class_decl;
     StatementBlock block;
     struct StatementConditional cond;
     struct StatementWhile while_loop;

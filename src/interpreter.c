@@ -471,6 +471,12 @@ cleanup:
   return;
 }
 
+static void evaluate_statement_class_decl(Statement* stmt) {
+  Value class = value_new_class(stmt->class_decl.identifier);
+  scope_insert(stmt->class_decl.identifier, &class);
+  value_scopeexit(&class);
+}
+
 static void evaluate_statement_return(Statement* stmt) {
   if (pending_return.await_return) {
     set_return(evaluate_expression(stmt->ret));
@@ -492,6 +498,9 @@ static void evaluate_statement(Statement* stmt) {
     break;
     case STATEMENT_FUN_DECL:
       evaluate_statement_fun_decl(stmt);
+    break;
+    case STATEMENT_CLASS_DECL:
+      evaluate_statement_class_decl(stmt);
     break;
     case STATEMENT_BLOCK:
       scope_new();

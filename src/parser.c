@@ -193,7 +193,8 @@ static bool is_decl_statement(struct TokensCursor* cursor) {
   return 
     t->type == TOKEN_TYPE_KEYWORD && (
       t->keyword == RESERVED_KEYWORD_VAR ||
-      t->keyword == RESERVED_KEYWORD_FUN
+      t->keyword == RESERVED_KEYWORD_FUN ||
+      t->keyword == RESERVED_KEYWORD_CLASS
     );
 }
 
@@ -530,7 +531,7 @@ static Statement* parse_statement_var_decl(struct TokensCursor* cursor) {
 }
 
 static Statement* parse_statement_fun_decl(struct TokensCursor* cursor) {
-  Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expect identifier after 'fun' keyword");
+  Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expected function identifier");
 
   Statement* stmt = arena_alloc(&parser.alloc, sizeof(Statement));
   stmt->type = STATEMENT_FUN_DECL;
@@ -569,6 +570,35 @@ static Statement* parse_statement_fun_decl(struct TokensCursor* cursor) {
   return stmt;
 }
 
+static Statement* parse_statement_method_decl(struct TokensCursor* cursor) {
+  if (is_keyword(cursor, RESERVED_KEYWORD_FUN)) {
+    syntax_error(token_at(cursor), "Class methods must not use the 'fun' keyword");
+    set_panic(cursor);
+    return NULL;
+  }
+
+  return parse_statement_fun_decl(cursor);
+}
+
+static Statement* parse_statement_class_decl(struct TokensCursor* cursor) {
+  Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expect identifier after 'class' keyword");
+
+  Statement* stmt = arena_alloc(&parser.alloc, sizeof(Statement));
+  stmt->type = STATEMENT_CLASS_DECL;
+  stmt->class_decl.identifier = identifier->lexeme;
+
+  consume(cursor, TOKEN_TYPE_LEFT_BRACE, "Missing opening brace '{' after class identifier");
+  vector_new(stmt->class_decl.methods, 1);
+  while (token_at(cursor)->type != TOKEN_TYPE_RIGHT_BRACE && !is_at_end(cursor)) {
+    Statement* method_stmt = parse_statement_method_decl(cursor);
+    vector_push(stmt->class_decl.methods, method_stmt->fun_decl);
+  }
+
+  consume(cursor, TOKEN_TYPE_RIGHT_BRACE, "Expected closing brace '}' after class body");
+
+  return stmt;
+}
+
 static Statement* parse_statement_decl(struct TokensCursor* cursor) {
   Token* t = token_at(cursor);
   if (t->type == TOKEN_TYPE_KEYWORD) {
@@ -577,6 +607,8 @@ static Statement* parse_statement_decl(struct TokensCursor* cursor) {
         return parse_statement_var_decl(advance(cursor));
       case RESERVED_KEYWORD_FUN:
         return parse_statement_fun_decl(advance(cursor));
+      case RESERVED_KEYWORD_CLASS:
+        return parse_statement_class_decl(advance(cursor));
       default:
         internal_logic_error(t, "Unreachable code %s:%d", __FILE__, __LINE__);
         return NULL;
@@ -750,11 +782,6 @@ static Statement* parse_statement(struct TokensCursor* cursor) {
     stmt = parse_statement_non_decl(cursor); 
   }
 
-  if (parser.panic) {
-    recover(cursor);
-    return NULL;
-  }
-
   return stmt;
 }
 
@@ -893,6 +920,20 @@ void statement_pretty_print(Statement* stmt) {
       }
       printf(")\n\t");
       statement_pretty_print(stmt->fun_decl.body);
+    break;
+    case STATEMENT_CLASS_DECL:
+      printf("STATEMENT CLASS \""SV_Fmt"\" DECLARATION:\n", SV_Fmt_arg(stmt->class_decl.identifier));
+      for (size_t i = 0; i < stmt->class_decl.methods.count; ++i) {
+        StatementMethodDecl* method = stmt->class_decl.methods.xs + i;
+        printf("\t(Identifier => "SV_Fmt" ; Params => ", SV_Fmt_arg(method->identifier));
+        for (size_t p = 0; p < method->params.count; ++p) {
+          printf(SV_Fmt, SV_Fmt_arg(method->params.xs[i]));
+          if (i < method->params.count - 1)
+            printf(", ");
+        }
+        printf(")\n");
+      }
+      printf("\n");
     break;
     case STATEMENT_BLOCK:
       printf("STATEMENT BLOCK: \n");

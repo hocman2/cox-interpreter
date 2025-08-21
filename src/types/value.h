@@ -12,6 +12,7 @@ enum ValueType {
   EVAL_TYPE_BOOL,
   EVAL_TYPE_ERR,
   EVAL_TYPE_FUN,
+  EVAL_TYPE_CLASS,
   EVAL_TYPE_NIL,
 };
 
@@ -27,6 +28,10 @@ struct FunctionValue {
   ScopeRef capture;
 };
 
+struct ClassValue {
+  StringView name;
+};
+
 typedef struct {
   enum ValueType type;
   union {
@@ -34,6 +39,7 @@ typedef struct {
     StringView svvalue;
     bool bvalue;
     struct FunctionValue fnvalue;
+    struct ClassValue classvalue;
   };
 } Value;
 
@@ -51,6 +57,8 @@ static const char* eval_type_to_str(enum ValueType t) {
     return "err";
   case EVAL_TYPE_FUN:
     return "fun";
+  case EVAL_TYPE_CLASS:
+    return "class";
   case EVAL_TYPE_NIL:
     return "nil";
   }
@@ -66,6 +74,7 @@ Value value_new_bool(bool val);
 Value value_new_err();
 Value value_new_nil();
 Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture);
+Value value_new_class(StringView name);
 
 Value value_copy(const Value* v);
 void value_scopeexit(Value* v);

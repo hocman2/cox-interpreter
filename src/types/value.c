@@ -83,7 +83,7 @@ void value_pretty_print(const Value* e) {
       printf("Double: %f", e->dvalue);
     break;
     case EVAL_TYPE_STRING_VIEW:
-      printf("String: %.*s", (int)e->svvalue.len, e->svvalue.str);
+      printf("String: "SV_Fmt, SV_Fmt_arg(e->svvalue));
     break;
     case EVAL_TYPE_BOOL:
       printf("Boolean: %s", e->bvalue ? "true" : "false");
@@ -94,6 +94,9 @@ void value_pretty_print(const Value* e) {
         printf(SV_Fmt, SV_Fmt_arg(e->fnvalue.params.xs[i]));
       }
       printf(")");
+    break;
+    case EVAL_TYPE_CLASS:
+      printf("Class: "SV_Fmt, SV_Fmt_arg(e->classvalue.name));
     break;
     case EVAL_TYPE_NIL:
       printf("NIL");
@@ -172,6 +175,16 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
   }
 
   return e; 
+}
+
+Value value_new_class(StringView name) {
+  Value e;
+  e.type = EVAL_TYPE_CLASS;
+  e.classvalue = (struct ClassValue) {
+    .name = name,
+  };
+
+  return e;
 }
 
 Value value_copy(const Value* v) {

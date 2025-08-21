@@ -1,10 +1,11 @@
-var a = "global";
-{
-  fun showA() {
-    print a;
+class Pipi {
+  constructor() {
+    print "Hello";
   }
 
-  showA();
-  var a = "block";
-  showA();
+  destructor () {
+    print "Bye";
+  }
 }
+
+print Pipi;
