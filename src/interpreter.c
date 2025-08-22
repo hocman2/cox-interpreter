@@ -67,36 +67,13 @@ static Value evaluate_expression_group(Expression* expr) {
   return evaluate_expression(expr->group.child);
 }
 
-static Value evaluate_expression_call(Expression* expr) {
-  Value fnvalue_evaluated;
-  Value* fnvalue; 
-  Expression* callee_expr = expr->call.callee;
-
-  // Resolve the callee as a scope value or an callable expression
-  if (
-    callee_expr->type == EXPRESSION_LITERAL && 
-    callee_expr->literal.type == TOKEN_TYPE_IDENTIFIER
-  ) {
-    fnvalue = scope_get_val_ref(callee_expr->literal.lexeme);
-    if (fnvalue == NULL) {
-      runtime_error(find_token(callee_expr), "Unresolved identifier as function name");
-      return value_new_err();
-    }
-  } else {
-    fnvalue_evaluated = evaluate_expression(callee_expr);
-    fnvalue = &fnvalue_evaluated;
-    if (fnvalue->type != EVAL_TYPE_FUN) {
-      runtime_error(find_token(callee_expr), "Expression does not evaluate to a callable");
-      return value_new_err();
-    }
-  }
-
+static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
   // Check arguments arity
   struct FunctionValue* fn = &fnvalue->fnvalue;
-  if (expr->call.args.count < fn->params.count) {
+  if (callexpr->call.args.count < fn->params.count) {
     char errmsg[1024] = "Missing arguments: ";
     size_t cursor = strlen(errmsg);
-    for (size_t i = expr->call.args.count; i < fn->params.count; ++i) {
+    for (size_t i = callexpr->call.args.count; i < fn->params.count; ++i) {
       StringView param_name = fn->params.xs[i];
       snprintf(errmsg + cursor, param_name.len + 3, "\""SV_Fmt"\"", SV_Fmt_arg(param_name));
       cursor += param_name.len + 2;
@@ -106,10 +83,10 @@ static Value evaluate_expression_call(Expression* expr) {
       }
     }
     snprintf(errmsg + cursor, strlen(" in function call") + 1, " in function call");
-    runtime_error(&expr->call.open_paren, errmsg);
+    runtime_error(&callexpr->call.open_paren, errmsg);
     return value_new_err();
-  } else if (expr->call.args.count > fn->params.count) {
-    runtime_error(&expr->call.open_paren, "Extraneous arguments in function call");
+  } else if (callexpr->call.args.count > fn->params.count) {
+    runtime_error(&callexpr->call.open_paren, "Extraneous arguments in function call");
     return value_new_err();
   }
 
@@ -118,7 +95,7 @@ static Value evaluate_expression_call(Expression* expr) {
   // bind the parameters
   for (size_t i = 0; i < fn->params.count; ++i) {
     StringView param_name = fn->params.xs[i];
-    Value arg = evaluate_expression(expr->call.args.xs[i]);
+    Value arg = evaluate_expression(callexpr->call.args.xs[i]);
     scope_insert(param_name, &arg);
   }
 
@@ -129,6 +106,44 @@ static Value evaluate_expression_call(Expression* expr) {
   scope_pop();
   scope_restore();
   return ret;
+}
+
+static Value evaluate_expression_call_class(Value* classvalue, Expression* _callexpr) {
+  printf("Instanciating "SV_Fmt"\n", SV_Fmt_arg(classvalue->classvalue.name));
+  return value_new_nil();
+}
+
+static Value evaluate_expression_call(Expression* expr) {
+  Value calleeval_evaluated;
+  Value* calleeval; 
+  Expression* callee_expr = expr->call.callee;
+
+  // Resolve the callee as a scope value or an callable expression
+  if (
+    callee_expr->type == EXPRESSION_LITERAL && 
+    callee_expr->literal.type == TOKEN_TYPE_IDENTIFIER
+  ) {
+    calleeval = scope_get_val_ref(callee_expr->literal.lexeme);
+    if (calleeval == NULL) {
+      runtime_error(find_token(callee_expr), "Unresolved identifier as callable");
+      return value_new_err();
+    }
+  } else {
+    calleeval_evaluated = evaluate_expression(callee_expr);
+    calleeval = &calleeval_evaluated;
+  }
+
+  switch (calleeval->type) {
+    case EVAL_TYPE_FUN:
+      return evaluate_expression_call_fn(calleeval, expr);
+      break;
+    case EVAL_TYPE_CLASS:
+      return evaluate_expression_call_class(calleeval, expr);
+      break;
+    default:
+      runtime_error(find_token(callee_expr), "Cannot resolve callee as callable");
+      return value_new_err();
+  }
 }
 
 static Value evaluate_expression_unary(Expression* expr) {
