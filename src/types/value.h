@@ -36,8 +36,13 @@ struct ClassValue {
   StringView name;
 };
 
+struct ClassRef {
+  struct ClassValue* rsc;
+  RcBlock* rc;
+};
+
 struct InstanceValue {
-  struct ClassValue* class;
+  struct ClassRef class;
 };
 
 typedef struct {
@@ -47,7 +52,7 @@ typedef struct {
     StringView svvalue;
     bool bvalue;
     struct FunctionValue fnvalue;
-    struct ClassValue classvalue;
+    struct ClassRef classvalue;
     struct InstanceValue instancevalue;
   };
 } Value;
@@ -79,6 +84,8 @@ void value_pretty_print(const Value* v);
 bool is_convertible_to_type(const Value* e, enum ValueType expected); 
 bool convert_to(Value* e, enum ValueType to_type); 
 
+void value_init(size_t num_classes);
+void value_free();
 Value value_new_double(double val);
 Value value_new_stringview(StringView sv);
 Value value_new_bool(bool val);

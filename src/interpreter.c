@@ -109,7 +109,7 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
 }
 
 static Value evaluate_expression_call_class(Value* classvalue, Expression* _callexpr) {
-  printf("Instanciating "SV_Fmt"\n", SV_Fmt_arg(classvalue->classvalue.name));
+  printf("Instanciating "SV_Fmt"\n", SV_Fmt_arg(classvalue->classvalue.rsc->name));
   return value_new_nil();
 }
 
@@ -535,6 +535,7 @@ static void evaluate_statement(Statement* stmt) {
 }
 
 void interpret(Statements stmts) {
+  value_init(NUM_CLASSES);
   scope_new();
 
   for (size_t i = 0; i < stmts.count; ++i) {
@@ -543,4 +544,5 @@ void interpret(Statements stmts) {
   }
 
   scope_pop();
+  value_free();
 }

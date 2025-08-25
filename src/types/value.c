@@ -1,5 +1,6 @@
 #include "value.h"
 #include "ref_count.h"
+#include "allocators/pool.h"
 #include "../interpreter/scope.h"
 
 // All of this complex machinery allows us to define type conversions rather easily
@@ -96,10 +97,10 @@ void value_pretty_print(const Value* e) {
       printf(")");
     break;
     case EVAL_TYPE_CLASS:
-      printf("Class: "SV_Fmt, SV_Fmt_arg(e->classvalue.name));
+      printf("Class: "SV_Fmt, SV_Fmt_arg(e->classvalue.rsc->name));
     break;
     case EVAL_TYPE_INSTANCE:
-      printf("Instance of "SV_Fmt, SV_Fmt_arg(e->instancevalue.class->name));
+      printf("Instance of "SV_Fmt, SV_Fmt_arg(e->instancevalue.class.rsc->name));
     break;
     case EVAL_TYPE_NIL:
       printf("NIL");
@@ -130,6 +131,16 @@ bool convert_to(Value* e, enum ValueType to_type) {
   }
 
   return false;
+}
+
+static Pool class_pool; 
+
+void value_init(size_t num_classes) {
+  pool_new(&class_pool, sizeof(struct ClassValue), num_classes);
+}
+
+void value_free() {
+  pool_freeall(&class_pool);
 }
 
 Value value_new_double(double val) {
@@ -181,12 +192,21 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
   return e; 
 }
 
+void class_free(void* classref) {
+  pool_free(&class_pool, classref);
+}
+
 Value value_new_class(StringView name) {
+  struct ClassValue* class; 
+  pool_alloc(&class_pool, (void**)&class);
+  class->name = name;
+
+  struct ClassRef classref;
+  rc_new(class, class_free, &classref);
+
   Value e;
   e.type = EVAL_TYPE_CLASS;
-  e.classvalue = (struct ClassValue) {
-    .name = name,
-  };
+  rc_move(&(e.classvalue), &classref); 
 
   return e;
 }
@@ -197,8 +217,9 @@ Value value_new_instance(Value* class) {
   Value e;
   e.type = EVAL_TYPE_INSTANCE;
   e.instancevalue = (struct InstanceValue){
-    .class = &(class->classvalue),
   };
+
+  rc_acquire(class->classvalue, &(e.instancevalue.class));
 
   return e;
 }
@@ -209,6 +230,18 @@ Value value_copy(const Value* v) {
       Value fn = *v;
       rc_acquire(v->fnvalue.capture, &(fn.fnvalue.capture));
       return fn;
+    }
+    break;
+    case EVAL_TYPE_CLASS: {
+      Value class = *v;
+      rc_acquire(v->classvalue, &(class.classvalue));
+      return class;
+    }
+    break;
+    case EVAL_TYPE_INSTANCE: {
+      Value instance = *v;
+      rc_acquire(v->instancevalue.class, &(instance.instancevalue.class));
+      return instance;
     }
     break;
     default:
@@ -222,8 +255,10 @@ void value_scopeexit(Value* v) {
       rc_release(&(v->fnvalue.capture));
     break;
     case EVAL_TYPE_CLASS:
+      rc_release(&(v->classvalue));
     break;
     case EVAL_TYPE_INSTANCE:
+      rc_release(&(v->instancevalue.class));
     break;
     default: 
     break;

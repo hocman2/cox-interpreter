@@ -4,6 +4,8 @@
 #include "parser.h"
 #include "types/value.h"
 
+#define NUM_CLASSES 255
+
 void evaluation_pretty_print(Value* e);
 void interpret(Statements stmts);
 
