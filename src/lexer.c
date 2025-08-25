@@ -1,6 +1,8 @@
 #include "lexer.h"
 
 #include <stdlib.h>
+#include <ctype.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <assert.h>
 

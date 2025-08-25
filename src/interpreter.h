@@ -6,6 +6,17 @@
 
 #define NUM_CLASSES 255
 
+struct PendingReturn {
+  Value value;
+  bool await_return;
+  bool should_return;
+};
+
+typedef struct {
+  struct PendingReturn pending_return;
+  StringView this_kw;
+} Interpreter;
+
 void evaluation_pretty_print(Value* e);
 void interpret(Statements stmts);
 

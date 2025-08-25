@@ -4,33 +4,29 @@
 #include "interpreter/scope.h"
 #include "types/value.h"
 #include "types/string_view.h"
+#include "types/token.h"
+#include "types/statements.h"
 #include "error/runtime.h"
 
 #include <assert.h>
 #include <string.h>
 #include <math.h>
 
-// Small data structure that stores return value of a function across nested recursive calls
-struct PendingReturn {
-  Value value;
-  bool await_return;
-  bool should_return;
-};
-static struct PendingReturn pending_return = {{EVAL_TYPE_NIL}, false, false}; 
+static Interpreter interpreter;
 static Value take_return() {
-  pending_return.await_return = false;
-  pending_return.should_return = false;
-  Value ret = pending_return.value;
-  pending_return.value = value_new_nil();
+  interpreter.pending_return.await_return = false;
+  interpreter.pending_return.should_return = false;
+  Value ret = interpreter.pending_return.value;
+  interpreter.pending_return.value = value_new_nil();
   return ret;
 }
 static void set_return(Value v) {
-  pending_return.should_return = true;
-  pending_return.value = v;
+  interpreter.pending_return.should_return = true;
+  interpreter.pending_return.value = v;
 }
 
 static bool should_return() {
-  return pending_return.should_return && pending_return.await_return;
+  return interpreter.pending_return.should_return && interpreter.pending_return.await_return;
 }
 
 static Value evaluate_expression(Expression* expr);
@@ -99,7 +95,7 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
     scope_insert(param_name, &arg);
   }
 
-  pending_return.await_return = true;
+  interpreter.pending_return.await_return = true;
   evaluate_statement_block(fn->body);
   Value ret = take_return();
 
@@ -487,13 +483,17 @@ cleanup:
 }
 
 static void evaluate_statement_class_decl(Statement* stmt) {
-  Value class = value_new_class(stmt->class_decl.identifier);
+  ClassMethods methods = build_class_methods(stmt->class_decl.methods_decl, interpreter.this_kw);
+
+  Value class = value_new_class(stmt->class_decl.identifier, methods);
   scope_insert(stmt->class_decl.identifier, &class);
   value_scopeexit(&class);
+
+  vector_free(methods);
 }
 
 static void evaluate_statement_return(Statement* stmt) {
-  if (pending_return.await_return) {
+  if (interpreter.pending_return.await_return) {
     set_return(evaluate_expression(stmt->ret));
   } else {
     runtime_error(find_token(stmt->ret), "Return statement must be used inside a function body");
@@ -534,8 +534,17 @@ static void evaluate_statement(Statement* stmt) {
   }
 }
 
-void interpret(Statements stmts) {
+void init_interpreter() {
   value_init(NUM_CLASSES);
+  interpreter.pending_return = (struct PendingReturn){{EVAL_TYPE_NIL}, false, false};
+
+  const char* this = keyword_to_string(RESERVED_KEYWORD_THIS);
+  assert(this && "Unable to get string value of RESERVED_KEYWORD_THIS"); 
+  interpreter.this_kw = sv_new(this);
+}
+
+void interpret(Statements stmts) {
+  init_interpreter();
   scope_new();
 
   for (size_t i = 0; i < stmts.count; ++i) {

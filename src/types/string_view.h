@@ -11,4 +11,7 @@ typedef struct {
   size_t len;
 } StringView;
 
+StringView sv_new(const char* str);
+StringView sv_newn(const char* str, size_t n);
+
 #endif

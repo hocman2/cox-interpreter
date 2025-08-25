@@ -29,13 +29,6 @@ struct FunctionValue {
   ScopeRef capture;
 };
 
-struct ClassValue {
-  size_t ref_count;
-  void (*ref_count_free)(void*);
-
-  StringView name;
-};
-
 struct ClassRef {
   struct ClassValue* rsc;
   RcBlock* rc;
@@ -56,6 +49,22 @@ typedef struct {
     struct InstanceValue instancevalue;
   };
 } Value;
+
+typedef struct {
+  StringView identifier;
+  Value method;
+} ClassMethod;
+
+typedef struct {
+  ClassMethod* xs;
+  size_t count;
+  size_t capacity;
+} ClassMethods;
+
+struct ClassValue {
+  StringView name;
+  ClassMethods methods;
+};
 
 typedef Value* ValueRef;
 
@@ -92,7 +101,8 @@ Value value_new_bool(bool val);
 Value value_new_err();
 Value value_new_nil();
 Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture);
-Value value_new_class(StringView name);
+ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl, StringView this_kw);
+Value value_new_class(StringView name, ClassMethods methods);
 Value value_new_instance(Value* class);
 
 Value value_copy(const Value* v);

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <setjmp.h>
+#include <string.h>
 
 #include "parser.h"
 #include "types/arena.h"
@@ -588,10 +589,10 @@ static Statement* parse_statement_class_decl(struct TokensCursor* cursor) {
   stmt->class_decl.identifier = identifier->lexeme;
 
   consume(cursor, TOKEN_TYPE_LEFT_BRACE, "Missing opening brace '{' after class identifier");
-  vector_new(stmt->class_decl.methods, 1);
+  vector_new(stmt->class_decl.methods_decl, 1);
   while (token_at(cursor)->type != TOKEN_TYPE_RIGHT_BRACE && !is_at_end(cursor)) {
     Statement* method_stmt = parse_statement_method_decl(cursor);
-    vector_push(stmt->class_decl.methods, method_stmt->fun_decl);
+    vector_push(stmt->class_decl.methods_decl, method_stmt->fun_decl);
   }
 
   consume(cursor, TOKEN_TYPE_RIGHT_BRACE, "Expected closing brace '}' after class body");
@@ -923,8 +924,8 @@ void statement_pretty_print(Statement* stmt) {
     break;
     case STATEMENT_CLASS_DECL:
       printf("STATEMENT CLASS \""SV_Fmt"\" DECLARATION:\n", SV_Fmt_arg(stmt->class_decl.identifier));
-      for (size_t i = 0; i < stmt->class_decl.methods.count; ++i) {
-        StatementMethodDecl* method = stmt->class_decl.methods.xs + i;
+      for (size_t i = 0; i < stmt->class_decl.methods_decl.count; ++i) {
+        StatementMethodDecl* method = stmt->class_decl.methods_decl.xs + i;
         printf("\t(Identifier => "SV_Fmt" ; Params => ", SV_Fmt_arg(method->identifier));
         for (size_t p = 0; p < method->params.count; ++p) {
           printf(SV_Fmt, SV_Fmt_arg(method->params.xs[i]));

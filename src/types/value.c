@@ -1,6 +1,7 @@
 #include "value.h"
 #include "ref_count.h"
 #include "allocators/pool.h"
+#include "statements.h"
 #include "../interpreter/scope.h"
 
 // All of this complex machinery allows us to define type conversions rather easily
@@ -192,14 +193,27 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
   return e; 
 }
 
-void class_free(void* classref) {
-  pool_free(&class_pool, classref);
+void class_free(void* rsc) {
+  struct ClassValue* class = (struct ClassValue*)rsc;
+  for (size_t i = 0; i < class->methods.count; ++i) {
+    ClassMethod* method = class->methods.xs + i;
+    rc_release(&method->method.fnvalue.capture);
+  }
+  vector_free(class->methods);
+  pool_free(&class_pool, rsc);
 }
 
-Value value_new_class(StringView name) {
+Value value_new_class(StringView name, ClassMethods methods) {
   struct ClassValue* class; 
   pool_alloc(&class_pool, (void**)&class);
   class->name = name;
+  vector_new(class->methods, methods.count);
+  for (size_t i = 0; i < methods.count; ++i) {
+    const ClassMethod* m = methods.xs + i;
+    assert(m->method.type == EVAL_TYPE_FUN && "Method value is not a function type");
+    ClassMethod method = {m->identifier, value_copy(&m->method)};
+    vector_push(class->methods, method);
+  }
 
   struct ClassRef classref;
   rc_new(class, class_free, &classref);
@@ -247,6 +261,31 @@ Value value_copy(const Value* v) {
     default:
     return *v;
   }
+}
+
+ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl, StringView this_kw) {
+  ClassMethods methods;
+  vector_new(methods, methods_decl.count);
+
+  for (size_t i = 0; i < methods_decl.count; ++i) {
+    StatementMethodDecl* method = methods_decl.xs + i;
+    
+    // Insert an invisible "this" parameter
+    struct StatementFunParameters new_params;
+    vector_new(new_params, method->params.count + 1);
+    vector_push(new_params, this_kw);
+    for (size_t p = 0; p < method->params.count; ++p) {
+      vector_push(new_params, method->params.xs[i]);
+    }
+    vector_free(method->params);
+    method->params = new_params;
+    Value fn = value_new_fun(method->body, method->params.xs, method->params.count, scope_ref_get_current());
+
+    ClassMethod built_method = {method->identifier, fn};
+    vector_push(methods, built_method);
+  }
+
+  return methods;
 }
 
 void value_scopeexit(Value* v) {

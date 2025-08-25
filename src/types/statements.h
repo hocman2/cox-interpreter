@@ -54,7 +54,7 @@ struct ClassMethodsDecl {
 
 struct StatementClassDecl {
   StringView identifier;
-  struct ClassMethodsDecl methods;
+  struct ClassMethodsDecl methods_decl;
 };
 
 typedef Statements StatementBlock;
