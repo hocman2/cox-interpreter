@@ -89,7 +89,7 @@ void value_pretty_print(const Value* e) {
       printf("Boolean: %s", e->bvalue ? "true" : "false");
     break;
     case EVAL_TYPE_FUN:
-      printf("Function[%llu](", e->fnvalue.capture->id);
+      printf("Function[%llu](", e->fnvalue.capture.rsc->id);
       for (size_t i = 0; i < e->fnvalue.params.count; ++i) {
         printf(SV_Fmt, SV_Fmt_arg(e->fnvalue.params.xs[i]));
       }
@@ -97,6 +97,9 @@ void value_pretty_print(const Value* e) {
     break;
     case EVAL_TYPE_CLASS:
       printf("Class: "SV_Fmt, SV_Fmt_arg(e->classvalue.name));
+    break;
+    case EVAL_TYPE_INSTANCE:
+      printf("Instance of "SV_Fmt, SV_Fmt_arg(e->instancevalue.class->name));
     break;
     case EVAL_TYPE_NIL:
       printf("NIL");
@@ -166,8 +169,9 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
   e.fnvalue = (struct FunctionValue){
     .params = {0},
     .body = body,
-    .capture = scope_ref_move(capture),
   };
+
+  rc_move(&(e.fnvalue.capture), &capture);
 
   vector_new(e.fnvalue.params, num_params);
   for (size_t i = 0; i < num_params; ++i) {
@@ -187,11 +191,23 @@ Value value_new_class(StringView name) {
   return e;
 }
 
+Value value_new_instance(Value* class) {
+  assert(class->type == EVAL_TYPE_CLASS && "Attempted to instanciate a class but passed value is not a Class");
+
+  Value e;
+  e.type = EVAL_TYPE_INSTANCE;
+  e.instancevalue = (struct InstanceValue){
+    .class = &(class->classvalue),
+  };
+
+  return e;
+}
+
 Value value_copy(const Value* v) {
   switch (v->type) {
     case EVAL_TYPE_FUN: {
       Value fn = *v;
-      fn.fnvalue.capture = scope_ref_acquire(v->fnvalue.capture);
+      rc_acquire(v->fnvalue.capture, &(fn.fnvalue.capture));
       return fn;
     }
     break;
@@ -203,7 +219,11 @@ Value value_copy(const Value* v) {
 void value_scopeexit(Value* v) {
   switch (v->type) {
     case EVAL_TYPE_FUN:
-      scope_ref_release(v->fnvalue.capture);
+      rc_release(&(v->fnvalue.capture));
+    break;
+    case EVAL_TYPE_CLASS:
+    break;
+    case EVAL_TYPE_INSTANCE:
     break;
     default: 
     break;

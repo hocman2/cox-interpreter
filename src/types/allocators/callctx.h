@@ -20,7 +20,7 @@ struct CallerCtx g_callctx;
 
 #else
 
-#define SET_CALLCTX(file, line) do{}while(0)
+#define SET_CALLCTX() do{}while(0)
 #define CTX_FILE
 #define CTX_LINE
 

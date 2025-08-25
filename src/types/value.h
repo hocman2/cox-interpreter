@@ -13,6 +13,7 @@ enum ValueType {
   EVAL_TYPE_ERR,
   EVAL_TYPE_FUN,
   EVAL_TYPE_CLASS,
+  EVAL_TYPE_INSTANCE,
   EVAL_TYPE_NIL,
 };
 
@@ -29,7 +30,14 @@ struct FunctionValue {
 };
 
 struct ClassValue {
+  size_t ref_count;
+  void (*ref_count_free)(void*);
+
   StringView name;
+};
+
+struct InstanceValue {
+  struct ClassValue* class;
 };
 
 typedef struct {
@@ -40,6 +48,7 @@ typedef struct {
     bool bvalue;
     struct FunctionValue fnvalue;
     struct ClassValue classvalue;
+    struct InstanceValue instancevalue;
   };
 } Value;
 
@@ -59,6 +68,8 @@ static const char* eval_type_to_str(enum ValueType t) {
     return "fun";
   case EVAL_TYPE_CLASS:
     return "class";
+  case EVAL_TYPE_INSTANCE:
+    return "instance";
   case EVAL_TYPE_NIL:
     return "nil";
   }
@@ -75,6 +86,7 @@ Value value_new_err();
 Value value_new_nil();
 Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture);
 Value value_new_class(StringView name);
+Value value_new_instance(Value* class);
 
 Value value_copy(const Value* v);
 void value_scopeexit(Value* v);

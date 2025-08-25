@@ -1,27 +1,53 @@
 #ifndef _REF_COUNT_H
 #define _REF_COUNT_H
 
-// Ref counting interface for struct
-// Must have the following fields:
-// [int, long, size_t, etc.] ref_count: actual counter
-// void (*ref_count_free)([type]*): the free function to call after a decrement leading to a 0 ref_count
+#define MAX_RC_BLOCKS 20
 
-#define ref_count_new(x, freefn) \
-do { \
-  (x).ref_count = 0; \
-  (x).ref_count_free = freefn; \
+#include <stdlib.h>
+
+typedef struct {
+  uint64_t count;
+  void (*free_fn)(void*);
+} RcBlock;
+
+extern RcBlock rc_blocks[MAX_RC_BLOCKS];
+extern size_t  num_rc_blocks;
+
+#define rc_new(r, free_fn, outref) do { \
+  (outref)->rc = _rc_new_impl(free_fn); \
+  (outref)->rsc = (r); \
 } while (0)
 
-#define ref_count_incr(x) \
-do { \
-  (x).ref_count += 1; \
+#define rc_acquire(other, outnew) do { \
+   _rc_acquire_impl((other).rc); \
+  (outnew)->rc = (other).rc; \
+  (outnew)->rsc = (other).rsc; \
 } while (0)
 
-#define ref_count_decr(x) \
-do { \
-  assert((x).ref_count > 0 && "Ref counted pointer was removed more than it was added !\n"); \
-  (x).ref_count -= 1; \
-  if ((x).ref_count == 0) (x).ref_count_free(&(x)); \
+#define rc_release(ref) do { \
+  _rc_release_impl((ref)->rsc, (ref)->rc); \
+  (ref)->rc = NULL; \
+  (ref)->rsc = NULL; \
 } while (0)
+
+#define rc_move(dst, src) do { \
+  (dst)->rc = (src)->rc; \
+  (dst)->rsc = (src)->rsc; \
+  (src)->rc = NULL; \
+  (src)->rsc = NULL; \
+} while (0)
+
+#define rc_null(ref) do { \
+  if ((ref)->rc) { \
+    rc_release(ref); \
+  } else { \
+    (ref)->rsc = NULL; \
+  } \
+} while (0)
+
+RcBlock* _rc_new_impl(void (*free_fn)(void*));
+void _rc_acquire_impl(RcBlock* rc);
+void _rc_release_impl(void* rsc, RcBlock* rc);
 
 #endif
+

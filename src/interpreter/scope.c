@@ -19,12 +19,12 @@ struct SidedScopes {
 
 static uint64_t scope_ids = 0;
 static Pool scope_alloc;
-static ScopeRef curr_scope = NULL;
+static ScopeRef curr_scope = {0};
 static struct SidedScopes sided_scopes;
 
 static void scope_stats(const Scope* s) {
   assert(s && "Can't print NULL scope");
-  printf("Scope [%llu] (%zu refs, %zu values) %p", s->id, s->ref_count, s->count, s);
+  printf("Scope [%llu] (%zu values) %p", s->id, s->count, s);
   if (s->count) {
     printf(" - (");
     for (size_t i = 0; i < s->count; ++i) {
@@ -38,30 +38,16 @@ static void scope_stats(const Scope* s) {
     printf("\n");
   }
 
-  if (s->upper) {
+  if (s->upper.rsc) {
     printf("-> ");
-    scope_stats((const Scope*)s->upper);
+    scope_stats(s->upper.rsc);
   }
 }
 
 ScopeRef scope_ref_get_current() { 
-  ref_count_incr(*curr_scope);
-  return curr_scope;
-}
-
-ScopeRef scope_ref_new(Scope* s) {
-  ref_count_incr(*s);
-  return s;
-}
-
-// Same as below but the name makes the usage more clear
-ScopeRef scope_ref_acquire(ScopeRef s) {
-  ref_count_incr(*s);
-  return s;
-}
-
-void scope_ref_release(ScopeRef ref) {
-  ref_count_decr(*ref);
+  ScopeRef acq;
+  rc_acquire(curr_scope, &acq);
+  return acq;
 }
 
 void scope_new() {
@@ -75,38 +61,42 @@ void scope_new() {
     scopes_init = true;
   }
 
-  Scope* new;
-  pool_alloc(&scope_alloc, (void**)&new);
-  new->id = scope_ids++;
-  ref_count_new(*new, scope_free);
-  vector_new(*new, ID_INITIAL_CAP); 
+  Scope* newscope;
+  pool_alloc(&scope_alloc, (void**)&newscope);
+  newscope->id = scope_ids++;
+  vector_new(*newscope, ID_INITIAL_CAP); 
 
-  ScopeRef new_ref = scope_ref_new(new);
+  ScopeRef new_ref;
+  rc_new(newscope, scope_free, &new_ref);
 
-  if (curr_scope) {
-    new_ref->upper = scope_ref_move(curr_scope);
+  if (curr_scope.rsc) {
+    rc_move(&(new_ref.rsc->upper), &curr_scope);
   } else {
-    new_ref->upper = NULL;
+    rc_null(&(new_ref.rsc->upper));
   }
 
-  curr_scope = scope_ref_move(new_ref);
+  rc_move(&curr_scope, &new_ref);
 }
 
 void scope_swap(ScopeRef new) {
-  if (!curr_scope) assert(false && "Attempted to scope swap with NULL curr_scope");
-  if (!new) assert(false && "Attempted to scope swap with NULL new scope");
+  if (!curr_scope.rsc) assert(false && "Attempted to scope swap with NULL curr_scope");
+  if (!new.rsc) assert(false && "Attempted to scope swap with NULL new scope");
 
-  vector_push(sided_scopes, scope_ref_move(curr_scope));
-  curr_scope = scope_ref_acquire(new);
+  ScopeRef moved;
+  rc_move(&moved, &curr_scope);
+  vector_push(sided_scopes, moved);
+  rc_acquire(new, &curr_scope);
 }
 
 void scope_restore() {
   assert(sided_scopes.count > 0 && "Attempted to scope_restore() without calling scope_swap first");
-  ScopeRef popped = scope_ref_move(sided_scopes.xs[sided_scopes.count - 1]);
+  ScopeRef popped;
+  ScopeRef last_sided = sided_scopes.xs[sided_scopes.count - 1];
+  rc_move(&popped, &last_sided);
   vector_pop(sided_scopes);
 
-  scope_ref_release(curr_scope);
-  curr_scope = scope_ref_move(popped);
+  rc_release(&curr_scope);
+  rc_move(&curr_scope, &popped);
 }
 
 static StoredValue* _scope_get_ident_recursive(Scope* s, StringView name) {
@@ -123,7 +113,7 @@ static StoredValue* _scope_get_ident_recursive(Scope* s, StringView name) {
 
   if (0);
   else if (id) return id;
-  else if (s->upper) return _scope_get_ident_recursive(s->upper, name);
+  else if (s->upper.rsc) return _scope_get_ident_recursive(s->upper.rsc, name);
   else return NULL;
 }
 
@@ -144,29 +134,35 @@ static StoredValue* _scope_get_ident(Scope* s, StringView name) {
 }
 
 static void scope_override_current() {
-  Scope* new;
-  pool_alloc(&scope_alloc, (void**)&new);
-  ref_count_new(*new, scope_free);
-  vector_new(*new, curr_scope->count);
-  new->id = scope_ids++;
-  new->upper = (curr_scope->upper) ? scope_ref_acquire(curr_scope->upper) : NULL;
+  Scope* newscope;
+  pool_alloc(&scope_alloc, (void**)&newscope);
+  vector_new(*newscope, curr_scope.rsc->count);
+  newscope->id = scope_ids++;
 
-  for (size_t i = 0; i < curr_scope->count; ++i) {
-    StoredValue* val = curr_scope->xs + i;
-    vector_push(*new, ((StoredValue){val->name, value_copy(&val->value)}));
+  if (curr_scope.rsc->upper.rsc) {
+    rc_acquire(curr_scope.rsc->upper, &(newscope->upper));
+  } else {
+    rc_null(&(newscope->upper));
   }
 
-  ScopeRef new_ref = scope_ref_new(new);
+  for (size_t i = 0; i < curr_scope.rsc->count; ++i) {
+    StoredValue* val = curr_scope.rsc->xs + i;
+    vector_push(*newscope, ((StoredValue){val->name, value_copy(&val->value)}));
+  }
 
-  ScopeRef old = scope_ref_move(curr_scope);
-  curr_scope = scope_ref_move(new_ref);
-  scope_ref_release(old);
+  ScopeRef new_ref;
+  rc_new(newscope, scope_free, &new_ref);
+
+  ScopeRef old;
+  rc_move(&old, &curr_scope);
+  rc_move(&curr_scope, &new_ref);
+  rc_release(&old);
 }
 
 void scope_insert(StringView name, const Value* value) {
   scope_override_current();
 
-  Scope* s = (Scope*)curr_scope;
+  Scope* s = (Scope*)curr_scope.rsc;
   // Update existing identifier if it already exists
   // as specified by lang spec
   StoredValue* id_maybe = _scope_get_ident(s, name);
@@ -186,7 +182,7 @@ void scope_insert(StringView name, const Value* value) {
 bool scope_replace(StringView name, const Value* value) {
   scope_override_current();
 
-  Scope* s = (Scope*)curr_scope;
+  Scope* s = (Scope*)curr_scope.rsc;
   StoredValue* id_maybe = _scope_get_ident_recursive(s, name);
 
   if (!id_maybe) {
@@ -199,40 +195,42 @@ bool scope_replace(StringView name, const Value* value) {
 
 
 ValueRef scope_get_val_ref(StringView name) {
-  Scope* s = (Scope*)curr_scope;
+  Scope* s = (Scope*)curr_scope.rsc;
   StoredValue* id = _scope_get_ident_recursive(s, name);
   if (id) return &(id->value);
   else return NULL;
 }
 
 Value scope_get_val_copy(StringView name) {
-  Scope* s = (Scope*)curr_scope;
+  Scope* s = (Scope*)curr_scope.rsc;
   StoredValue* id = _scope_get_ident_recursive(s, name);
   if (id) return value_copy(&id->value);
   else return value_new_err();
 }
 
 void scope_pop() {
-  for (size_t i = 0; i < curr_scope->count; ++i) {
-    StoredValue* v = curr_scope->xs + i;
+  for (size_t i = 0; i < curr_scope.rsc->count; ++i) {
+    StoredValue* v = curr_scope.rsc->xs + i;
     value_scopeexit(&v->value);
   }
 
-  if (!curr_scope->upper) {
+  if (!curr_scope.rsc->upper.rsc) {
     // Global scope is popped, force the free
-    scope_free((Scope*)curr_scope);
-    curr_scope = NULL;
+    rc_null(&curr_scope);
+    scope_free((void*)curr_scope.rsc);
     pool_freeall(&scope_alloc);
   } else {
-    ScopeRef upper = scope_ref_acquire(curr_scope->upper);
-    scope_ref_release(curr_scope);
-    curr_scope = scope_ref_move(upper);
+    ScopeRef upper;
+    rc_acquire(curr_scope.rsc->upper, &upper);
+    rc_release(&curr_scope);
+    rc_move(&curr_scope, &upper);
   }
 }
 
-void scope_free(Scope* s) {
+void scope_free(void* scope) {
+  Scope* s = (Scope*)scope;
   if (!s) return;
-  if (s->upper) scope_ref_release(s->upper);
+  if (s->upper.rsc) rc_release(&s->upper);
   pool_free(&scope_alloc, s);
   vector_free(*s);
 }

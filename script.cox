@@ -8,8 +8,4 @@ class Pipi {
   }
 }
 
-fun hello() {
-  print "hello";
-}
-
 Pipi();
