@@ -9,6 +9,8 @@ enum ExpressionType {
   EXPRESSION_BINARY,
   EXPRESSION_GROUP,
   EXPRESSION_CALL,
+  EXPRESSION_GET,
+  EXPRESSION_SET,
   EXPRESSION_LITERAL,
   EXPRESSION_ASSIGNMENT,
   EXPRESSION_ANON_FUN,
@@ -44,6 +46,17 @@ struct Call {
   struct CallArguments args;
 };
 
+struct Get {
+  Expression* object;
+  Token name;
+};
+
+struct Set {
+  Expression* object;
+  Token name;
+  Expression* right;
+};
+
 struct Assignment {
   Token name;
   Expression* right;
@@ -69,6 +82,8 @@ struct Expression {
     Token literal;
     struct Group group;
     struct Call call;
+    struct Get get;
+    struct Set set;
     struct Assignment assignment;
     struct AnonFun anon_fun;
     Value evaluated;

@@ -34,8 +34,9 @@ struct ClassRef {
   RcBlock* rc;
 };
 
-struct InstanceValue {
-  struct ClassRef class;
+struct InstanceRef {
+  struct InstanceValue* rsc;
+  RcBlock* rc;
 };
 
 typedef struct {
@@ -46,7 +47,7 @@ typedef struct {
     bool bvalue;
     struct FunctionValue fnvalue;
     struct ClassRef classvalue;
-    struct InstanceValue instancevalue;
+    struct InstanceRef instancevalue;
   };
 } Value;
 
@@ -64,6 +65,22 @@ typedef struct {
 struct ClassValue {
   StringView name;
   ClassMethods methods;
+};
+
+struct InstanceProperty {
+  StringView identifier;
+  Value value;
+};
+
+struct InstanceProperties {
+  struct InstanceProperty* xs;
+  size_t count;
+  size_t capacity;
+};
+
+struct InstanceValue {
+  struct ClassRef class;
+  struct InstanceProperties properties;
 };
 
 typedef Value* ValueRef;
@@ -93,7 +110,7 @@ void value_pretty_print(const Value* v);
 bool is_convertible_to_type(const Value* e, enum ValueType expected); 
 bool convert_to(Value* e, enum ValueType to_type); 
 
-void value_init(size_t num_classes);
+void value_init(size_t num_classes, size_t num_instances);
 void value_free();
 Value value_new_double(double val);
 Value value_new_stringview(StringView sv);

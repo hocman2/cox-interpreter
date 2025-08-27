@@ -1,11 +1,11 @@
 class Pipi {
-  constructor() {
-    print "Hello";
-  }
-
-  destructor () {
-    print "Bye";
+  printCaca() {
+    print "Caca";
   }
 }
 
-Pipi();
+var pipi = Pipi();
+pipi.printCaca();
+print pipi.prout;
+pipi.prout = "hello";
+print pipi.prout;

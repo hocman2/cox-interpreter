@@ -5,6 +5,7 @@
 #include "types/value.h"
 
 #define NUM_CLASSES 255
+#define NUM_INSTANCES 255
 
 struct PendingReturn {
   Value value;

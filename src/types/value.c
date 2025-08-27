@@ -101,7 +101,7 @@ void value_pretty_print(const Value* e) {
       printf("Class: "SV_Fmt, SV_Fmt_arg(e->classvalue.rsc->name));
     break;
     case EVAL_TYPE_INSTANCE:
-      printf("Instance of "SV_Fmt, SV_Fmt_arg(e->instancevalue.class.rsc->name));
+      printf("Instance of "SV_Fmt, SV_Fmt_arg(e->instancevalue.rsc->class.rsc->name));
     break;
     case EVAL_TYPE_NIL:
       printf("NIL");
@@ -135,13 +135,16 @@ bool convert_to(Value* e, enum ValueType to_type) {
 }
 
 static Pool class_pool; 
+static Pool instance_pool; 
 
-void value_init(size_t num_classes) {
+void value_init(size_t num_classes, size_t num_instances) {
   pool_new(&class_pool, sizeof(struct ClassValue), num_classes);
+  pool_new(&instance_pool, sizeof(struct InstanceValue), num_instances);
 }
 
 void value_free() {
   pool_freeall(&class_pool);
+  pool_freeall(&instance_pool);
 }
 
 Value value_new_double(double val) {
@@ -225,15 +228,37 @@ Value value_new_class(StringView name, ClassMethods methods) {
   return e;
 }
 
+void instance_free(void* rsc) {
+  struct InstanceValue* inst = (struct InstanceValue*)rsc;
+  for (size_t i = 0; i < inst->properties.count; ++i) {
+    struct InstanceProperty* prop = inst->properties.xs + i;
+    value_scopeexit(&prop->value);
+  }
+  rc_release(&inst->class);
+  vector_free(inst->properties);
+  pool_free(&instance_pool, rsc);
+}
+
 Value value_new_instance(Value* class) {
   assert(class->type == EVAL_TYPE_CLASS && "Attempted to instanciate a class but passed value is not a Class");
+  
+  struct InstanceValue* instance;
+  pool_alloc(&instance_pool, (void**)&instance);
+  rc_acquire(class->classvalue, &(instance->class));
+  vector_new(instance->properties, 1);
+
+  for (size_t i = 0; i < class->classvalue.rsc->methods.count; ++i) {
+    ClassMethod* method = class->classvalue.rsc->methods.xs + i;
+    struct InstanceProperty prop = {.identifier = method->identifier, .value = method->method};
+    vector_push(instance->properties, prop);
+  }
+
+  struct InstanceRef instanceref;
+  rc_new(instance, instance_free, &instanceref); 
 
   Value e;
   e.type = EVAL_TYPE_INSTANCE;
-  e.instancevalue = (struct InstanceValue){
-  };
-
-  rc_acquire(class->classvalue, &(e.instancevalue.class));
+  rc_move(&e.instancevalue, &instanceref);
 
   return e;
 }
@@ -254,7 +279,7 @@ Value value_copy(const Value* v) {
     break;
     case EVAL_TYPE_INSTANCE: {
       Value instance = *v;
-      rc_acquire(v->instancevalue.class, &(instance.instancevalue.class));
+      rc_acquire(v->instancevalue, &instance.instancevalue);
       return instance;
     }
     break;
@@ -291,13 +316,13 @@ ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl, StringVie
 void value_scopeexit(Value* v) {
   switch (v->type) {
     case EVAL_TYPE_FUN:
-      rc_release(&(v->fnvalue.capture));
+      rc_release(&v->fnvalue.capture);
     break;
     case EVAL_TYPE_CLASS:
-      rc_release(&(v->classvalue));
+      rc_release(&v->classvalue);
     break;
     case EVAL_TYPE_INSTANCE:
-      rc_release(&(v->instancevalue.class));
+      rc_release(&v->instancevalue);
     break;
     default: 
     break;

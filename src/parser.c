@@ -24,6 +24,10 @@ Token* find_token(Expression* expr) {
       return find_token(expr->group.child);
     case EXPRESSION_CALL:
       return &expr->call.open_paren;
+    case EXPRESSION_GET:
+      return &expr->get.name;
+    case EXPRESSION_SET:
+      return &expr->set.name;
     case EXPRESSION_UNARY:
       return find_token(expr->unary.child);
     case EXPRESSION_ASSIGNMENT:
@@ -289,14 +293,17 @@ static Expression* parse_primary(struct TokensCursor* cursor) {
         case RESERVED_KEYWORD_TRUE:
           expr->type = EXPRESSION_STATIC;
           expr->evaluated = value_new_bool(true);
+          advance(cursor);
           break;
         case RESERVED_KEYWORD_FALSE:
           expr->type = EXPRESSION_STATIC;
           expr->evaluated = value_new_bool(false);
+          advance(cursor);
           break;
         case RESERVED_KEYWORD_NIL:
           expr->type = EXPRESSION_STATIC;
           expr->evaluated = value_new_nil();
+          advance(cursor);
           break;
         default:
           syntax_error(token, "Unexpected keyword "SV_Fmt, SV_Fmt_arg(token->lexeme));
@@ -355,19 +362,29 @@ static void parse_arguments(struct TokensCursor* cursor, struct CallArguments* o
 static Expression* parse_call(struct TokensCursor* cursor) {
   Expression* expr = parse_primary(cursor);
 
-  while (token_at(cursor)->type == TOKEN_TYPE_LEFT_PAREN) {
-    Expression* callee = expr;
-    expr = arena_alloc(&parser.alloc, sizeof(Expression));
-    expr->type = EXPRESSION_CALL;
-    expr->call.open_paren = *token_at(cursor);
-    expr->call.callee = callee;
-    parse_arguments(cursor, &expr->call.args);
-
-    if (expr->call.args.count > MAX_CALL_ARGS) {
-      static_error(token_at(cursor), "Function call exceeds number of arguments: %d", MAX_CALL_ARGS);
+  while (true) {
+    Token* t = token_at(cursor);
+    if (t->type == TOKEN_TYPE_LEFT_PAREN) {
+      Expression* callee = expr;
+      expr = arena_alloc(&parser.alloc, sizeof(Expression));
+      expr->type = EXPRESSION_CALL;
+      expr->call.open_paren = *token_at(cursor);
+      expr->call.callee = callee;
+      parse_arguments(cursor, &expr->call.args);
+      if (expr->call.args.count > MAX_CALL_ARGS) {
+        static_error(token_at(cursor), "Function call exceeds number of arguments: %d", MAX_CALL_ARGS);
+      }
+      consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Expected closing parentheses after function call");
+    } else if (t->type == TOKEN_TYPE_DOT) {
+      advance(cursor);
+      Expression* object = expr;
+      expr = arena_alloc(&parser.alloc, sizeof(Expression));
+      expr->type = EXPRESSION_GET;
+      expr->get.object = object;
+      expr->get.name = *consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expected identifier after '.'");
+    } else {
+      break;
     }
-
-    consume(cursor, TOKEN_TYPE_RIGHT_PAREN, "Expected closing parentheses after function call");
   }
 
   return expr;
@@ -486,10 +503,24 @@ static Expression* parse_assignment(struct TokensCursor* cursor) {
 
   Token* t = token_at(cursor);
   if (t->type == TOKEN_TYPE_EQUAL) {
-    Token name = expr->literal;
-    expr->type = EXPRESSION_ASSIGNMENT;
-    expr->assignment.name = name;
-    expr->assignment.right = parse_assignment(advance(cursor));
+    if (expr->type == EXPRESSION_GET) {
+      // turn the get into a set
+      expr->type = EXPRESSION_SET;
+      
+      // No-ops
+      expr->set.object  =  expr->get.object;
+      expr->set.name    =  expr->get.name;
+
+      expr->set.right = parse_assignment(advance(cursor));
+    } else if (expr->type == EXPRESSION_LITERAL) {
+      Token name = expr->literal;
+      expr->type = EXPRESSION_ASSIGNMENT;
+      expr->assignment.name = name;
+      expr->assignment.right = parse_assignment(advance(cursor));
+    } else {
+      syntax_error(find_token(expr), "Expression can't be assigned to");
+      set_panic(cursor);
+    }
   }
 
   return expr;
@@ -849,6 +880,19 @@ void expression_pretty_print(Expression* expr) {
       }
       printf(")");
 
+      printf(")");
+      break;
+    case EXPRESSION_GET:
+      printf("(get object: ");
+      expression_pretty_print(expr->get.object);
+      printf(", name: ("SV_Fmt"))", SV_Fmt_arg(expr->get.name.lexeme));
+      break;
+    case EXPRESSION_SET:
+      printf("(set object: ");
+      expression_pretty_print(expr->set.object);
+      printf(", name: ("SV_Fmt"), ", SV_Fmt_arg(expr->set.name.lexeme));
+      printf("right: ");
+      expression_pretty_print(expr->set.right);
       printf(")");
       break;
     case EXPRESSION_UNARY:

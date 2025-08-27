@@ -105,8 +105,7 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
 }
 
 static Value evaluate_expression_call_class(Value* classvalue, Expression* _callexpr) {
-  printf("Instanciating "SV_Fmt"\n", SV_Fmt_arg(classvalue->classvalue.rsc->name));
-  return value_new_nil();
+  return value_new_instance(classvalue);
 }
 
 static Value evaluate_expression_call(Expression* expr) {
@@ -140,6 +139,57 @@ static Value evaluate_expression_call(Expression* expr) {
       runtime_error(find_token(callee_expr), "Cannot resolve callee as callable");
       return value_new_err();
   }
+}
+
+Value evaluate_expression_get(Expression* expr) {
+  Value object = evaluate_expression(expr->get.object);
+  if (object.type != EVAL_TYPE_INSTANCE) {
+    runtime_error(find_token(expr), "Get accessor must be used on instances");
+    return value_new_err();
+  }
+
+  StringView looking_for = expr->get.name.lexeme;
+  Value retval = value_new_nil();
+  for (size_t i = 0; i < object.instancevalue.rsc->properties.count; ++i) {
+    struct InstanceProperty* prop = object.instancevalue.rsc->properties.xs + i; 
+    if (strncmp(prop->identifier.str, looking_for.str, looking_for.len) == 0) {
+      retval = value_copy(&prop->value);
+      break;
+    }
+  }
+
+  value_scopeexit(&object);
+  return retval;
+}
+
+Value evaluate_expression_set(Expression* expr) {
+  Value object = evaluate_expression(expr->set.object);
+  if (object.type != EVAL_TYPE_INSTANCE) {
+    runtime_error(find_token(expr), "Get accessor must be used on instances");
+    return value_new_err();
+  }
+
+  Value right = evaluate_expression(expr->set.right);
+
+  StringView looking_for = expr->set.name.lexeme;
+  bool found_prop = false;
+  for (size_t i = 0; i < object.instancevalue.rsc->properties.count; ++i) {
+    struct InstanceProperty* prop = object.instancevalue.rsc->properties.xs + i;
+    if (strncmp(prop->identifier.str, looking_for.str, looking_for.len) == 0) {
+      prop->value = right;
+      found_prop = true;
+      break;
+    }
+  }
+
+  if (found_prop) {
+    return object;
+  }
+
+  struct InstanceProperty new_prop = {.identifier = expr->set.name.lexeme, .value = right};
+  vector_push(object.instancevalue.rsc->properties, new_prop);
+
+  return object;
 }
 
 static Value evaluate_expression_unary(Expression* expr) {
@@ -336,6 +386,10 @@ static Value evaluate_expression(Expression* expr) {
       return evaluate_expression_group(expr);
     case EXPRESSION_CALL:
       return evaluate_expression_call(expr);
+    case EXPRESSION_GET:
+      return evaluate_expression_get(expr);
+    case EXPRESSION_SET:
+      return evaluate_expression_set(expr);
     case EXPRESSION_LITERAL:
       switch (expr->literal.type) {
         case TOKEN_TYPE_STRING:
@@ -535,7 +589,7 @@ static void evaluate_statement(Statement* stmt) {
 }
 
 void init_interpreter() {
-  value_init(NUM_CLASSES);
+  value_init(NUM_CLASSES, NUM_INSTANCES);
   interpreter.pending_return = (struct PendingReturn){{EVAL_TYPE_NIL}, false, false};
 
   const char* this = keyword_to_string(RESERVED_KEYWORD_THIS);
