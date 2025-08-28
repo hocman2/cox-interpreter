@@ -13,8 +13,14 @@ struct PendingReturn {
   bool should_return;
 };
 
+struct InstanceSubject {
+  Value subject;
+  bool has_subject;
+};
+
 typedef struct {
   struct PendingReturn pending_return;
+  struct InstanceSubject instance_subject;
   StringView this_kw;
 } Interpreter;
 

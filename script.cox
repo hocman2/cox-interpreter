@@ -1,11 +1,13 @@
-class Pipi {
-  printCaca() {
-    print "Caca";
+class B {
+  printsmth() {
+    print "smth";
   }
 }
 
-var pipi = Pipi();
-pipi.printCaca();
-print pipi.prout;
-pipi.prout = "hello";
-print pipi.prout;
+class A {
+  getBInst() {
+    return B();
+  }
+}
+
+A().getBInst().printsmth();
