@@ -24,28 +24,22 @@ static void set_return(Value v) {
   interpreter.pending_return.should_return = true;
   interpreter.pending_return.value = v;
 }
-
-static void discard_subject() { 
-  value_scopeexit(&interpreter.instance_subject.subject);
-  interpreter.instance_subject.has_subject = false;
-}
-static void set_subject(Value v) {
-  if (interpreter.instance_subject.has_subject) {
-    discard_subject();
-  }
-
-  interpreter.instance_subject.subject = v;
-  interpreter.instance_subject.has_subject = true;
-}
-static bool has_subject() {
-  return interpreter.instance_subject.has_subject;
-}
-static Value* get_subject() {
-  return &interpreter.instance_subject.subject;
-}
-
 static bool should_return() {
   return interpreter.pending_return.should_return && interpreter.pending_return.await_return;
+}
+
+void discard_context_subject() {
+  value_scopeexit(&interpreter.ctx_subject);
+  interpreter.ctx_subject = value_new_nil();
+}
+bool has_context_subject() {
+  return interpreter.ctx_subject.type != EVAL_TYPE_NIL;
+}
+void set_context_subject(Value subject) {
+  if (has_context_subject())
+    discard_context_subject();
+
+  interpreter.ctx_subject = subject;
 }
 
 static Value evaluate_expression(Expression* expr);
@@ -86,18 +80,16 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
   // Check arguments arity
   struct FunctionValue* fn = &fnvalue->fnvalue;
   size_t arg_count = callexpr->call.args.count;
-  if (has_subject()) {
-    arg_count += 1; //artificially pump it up, taking into account "this"
-  }
+  size_t params_count = fn->params.count;
 
-  if (arg_count < fn->params.count) {
+  if (arg_count < params_count) {
     char errmsg[1024] = "Missing arguments: ";
     size_t cursor = strlen(errmsg);
-    for (size_t i = arg_count; i < fn->params.count; ++i) {
+    for (size_t i = arg_count; i < params_count; ++i) {
       StringView param_name = fn->params.xs[i];
       snprintf(errmsg + cursor, param_name.len + 3, "\""SV_Fmt"\"", SV_Fmt_arg(param_name));
       cursor += param_name.len + 2;
-      if (i < fn->params.count - 1) {
+      if (i < params_count - 1) {
         snprintf(errmsg + cursor, 3, ", ");
         cursor += 2;
       }
@@ -105,38 +97,19 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
     snprintf(errmsg + cursor, strlen(" in function call") + 1, " in function call");
     runtime_error(&callexpr->call.open_paren, errmsg);
     return value_new_err();
-  } else if (arg_count > fn->params.count) {
+  } else if (arg_count > params_count) {
     runtime_error(&callexpr->call.open_paren, "Extraneous arguments in function call");
     return value_new_err();
   }
 
   scope_swap(fn->capture);
   scope_new();
-  
-  // bind the parameters
-  if (has_subject()) {
-    StringView this_param = fn->params.xs[0];
-#ifdef _DEBUG
-    if (strncmp(this_param.str, interpreter.this_kw.str, interpreter.this_kw.len) != 0) {
-      internal_logic_error(NULL, "Failed to bind 'this' parameter. The function's first parameter is not the 'this' keyword. There might be a bug in method registration");
-      return value_new_err();
-    }
-#endif
-    scope_insert(this_param, get_subject());
 
-    for (size_t i = 1; i < fn->params.count; ++i) {
-      StringView param_name = fn->params.xs[i];
-      Value arg = evaluate_expression(callexpr->call.args.xs[i-1]);
-      scope_insert(param_name, &arg);
-    }
-  } else {
-    for (size_t i = 0; i < fn->params.count; ++i) {
-      StringView param_name = fn->params.xs[i];
-      Value arg = evaluate_expression(callexpr->call.args.xs[i]);
-      scope_insert(param_name, &arg);
-    }
+  for (size_t i = 0; i < fn->params.count; ++i) {
+    StringView param_name = fn->params.xs[i];
+    Value arg = evaluate_expression(callexpr->call.args.xs[i]);
+    scope_insert(param_name, &arg);
   }
-
 
   interpreter.pending_return.await_return = true;
   evaluate_statement_block(fn->body);
@@ -148,7 +121,7 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
 }
 
 static Value evaluate_expression_call_class(Value* classvalue, Expression* _callexpr) {
-  return value_new_instance(classvalue);
+  return value_new_instance(classvalue, interpreter.this_kw);
 }
 
 static Value evaluate_expression_call(Expression* expr) {
@@ -201,7 +174,7 @@ Value evaluate_expression_get(Expression* expr) {
     }
   }
 
-  set_subject(object);
+  set_context_subject(object);
   return retval;
 }
 
@@ -450,6 +423,14 @@ static Value evaluate_expression(Expression* expr) {
         break;
         case TOKEN_TYPE_KEYWORD:
           switch(expr->literal.keyword) {
+            case RESERVED_KEYWORD_THIS: {
+              Value val = scope_get_val_copy(expr->literal.lexeme);
+              if (val.type == EVAL_TYPE_ERR) {
+                StringView lexeme = expr->literal.lexeme;
+                runtime_error(NULL, "Unresolved identifier: "SV_Fmt, SV_Fmt_arg(lexeme));
+              }
+              return val;
+            }
             case RESERVED_KEYWORD_TRUE:
               {
                 Value e = {EVAL_TYPE_BOOL};
@@ -490,13 +471,7 @@ static Value evaluate_expression(Expression* expr) {
 static void evaluate_statement_expr(Statement* stmt) {
   Value v = evaluate_expression(stmt->expr);
 
-  // prevents a bug where a statement expr is just a get chain
-  // this also scopeexists the value hence the if/else
-  if (has_subject()) {
-    discard_subject();
-  } else {
-    value_scopeexit(&v);
-  }
+  value_scopeexit(&v);
 }
 
 static void evaluate_statement_print(Statement* stmt) {
@@ -587,7 +562,7 @@ cleanup:
 }
 
 static void evaluate_statement_class_decl(Statement* stmt) {
-  ClassMethods methods = build_class_methods(stmt->class_decl.methods_decl, interpreter.this_kw);
+  ClassMethods methods = build_class_methods(stmt->class_decl.methods_decl);
 
   Value class = value_new_class(stmt->class_decl.identifier, methods);
   scope_insert(stmt->class_decl.identifier, &class);
@@ -636,12 +611,16 @@ static void evaluate_statement(Statement* stmt) {
       evaluate_statement_return(stmt);
     break;
   }
+
+  if (has_context_subject()) {
+    discard_context_subject();
+  }
 }
 
 void init_interpreter() {
   value_init(NUM_CLASSES, NUM_INSTANCES);
   interpreter.pending_return = (struct PendingReturn){value_new_nil(), false, false};
-  interpreter.instance_subject = (struct InstanceSubject) {value_new_nil(), false}; 
+  interpreter.ctx_subject = value_new_nil();
 
   const char* this = keyword_to_string(RESERVED_KEYWORD_THIS);
   assert(this && "Unable to get string value of RESERVED_KEYWORD_THIS"); 

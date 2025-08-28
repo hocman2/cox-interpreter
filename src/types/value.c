@@ -196,6 +196,19 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
   return e; 
 }
 
+Value value_fun_change_capture(const Value* fun, ScopeRef new_capture) {
+  Value new;
+  new.type = EVAL_TYPE_FUN;
+  new.fnvalue = (struct FunctionValue) {
+    .params = fun->fnvalue.params,
+    .body = fun->fnvalue.body,
+  };
+
+  rc_move(&new.fnvalue.capture, &new_capture);
+
+  return new;
+}
+
 void class_free(void* rsc) {
   struct ClassValue* class = (struct ClassValue*)rsc;
   for (size_t i = 0; i < class->methods.count; ++i) {
@@ -239,7 +252,7 @@ void instance_free(void* rsc) {
   pool_free(&instance_pool, rsc);
 }
 
-Value value_new_instance(Value* class) {
+Value value_new_instance(Value* class, StringView this_kw) {
   assert(class->type == EVAL_TYPE_CLASS && "Attempted to instanciate a class but passed value is not a Class");
   
   struct InstanceValue* instance;
@@ -247,18 +260,18 @@ Value value_new_instance(Value* class) {
   rc_acquire(class->classvalue, &(instance->class));
   vector_new(instance->properties, 1);
 
-  for (size_t i = 0; i < class->classvalue.rsc->methods.count; ++i) {
-    ClassMethod* method = class->classvalue.rsc->methods.xs + i;
-    struct InstanceProperty prop = {.identifier = method->identifier, .value = method->method};
-    vector_push(instance->properties, prop);
-  }
-
-  struct InstanceRef instanceref;
-  rc_new(instance, instance_free, &instanceref); 
-
   Value e;
   e.type = EVAL_TYPE_INSTANCE;
-  rc_move(&e.instancevalue, &instanceref);
+  rc_new(instance, instance_free, &e.instancevalue); 
+
+  ScopeRef capture = scope_create();
+  scope_insert_into(capture, this_kw, &e);
+  for (size_t i = 0; i < class->classvalue.rsc->methods.count; ++i) {
+    ClassMethod* method = class->classvalue.rsc->methods.xs + i;
+    Value instance_captured = value_fun_change_capture(&method->method, capture);
+    struct InstanceProperty prop = {.identifier = method->identifier, .value = instance_captured};
+    vector_push(instance->properties, prop);
+  }
 
   return e;
 }
@@ -288,22 +301,13 @@ Value value_copy(const Value* v) {
   }
 }
 
-ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl, StringView this_kw) {
+ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl) {
   ClassMethods methods;
   vector_new(methods, methods_decl.count);
 
   for (size_t i = 0; i < methods_decl.count; ++i) {
     StatementMethodDecl* method = methods_decl.xs + i;
     
-    // Insert an invisible "this" parameter
-    struct StatementFunParameters new_params;
-    vector_new(new_params, method->params.count + 1);
-    vector_push(new_params, this_kw);
-    for (size_t p = 0; p < method->params.count; ++p) {
-      vector_push(new_params, method->params.xs[i]);
-    }
-    vector_free(method->params);
-    method->params = new_params;
     Value fn = value_new_fun(method->body, method->params.xs, method->params.count, scope_ref_get_current());
 
     ClassMethod built_method = {method->identifier, fn};

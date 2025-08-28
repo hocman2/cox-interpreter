@@ -50,7 +50,7 @@ ScopeRef scope_ref_get_current() {
   return acq;
 }
 
-void scope_new() {
+ScopeRef scope_create() {
   const size_t ID_INITIAL_CAP = 10;
   const size_t SIDED_INITIAL_CAP = 16;
 
@@ -68,14 +68,19 @@ void scope_new() {
 
   ScopeRef new_ref;
   rc_new(newscope, scope_free, &new_ref);
+  return new_ref;
+}
+
+void scope_new() {
+  ScopeRef new_scope = scope_create();
 
   if (curr_scope.rsc) {
-    rc_move(&(new_ref.rsc->upper), &curr_scope);
+    rc_move(&new_scope.rsc->upper, &curr_scope);
   } else {
-    rc_null(&(new_ref.rsc->upper));
+    rc_null(&new_scope.rsc->upper);
   }
 
-  rc_move(&curr_scope, &new_ref);
+  rc_move(&curr_scope, &new_scope);
 }
 
 void scope_swap(ScopeRef new) {
@@ -159,10 +164,9 @@ static void scope_override_current() {
   rc_release(&old);
 }
 
-void scope_insert(StringView name, const Value* value) {
-  scope_override_current();
+void scope_insert_into(ScopeRef scope, StringView name, const Value* value) {
+  Scope* s = (Scope*)scope.rsc;
 
-  Scope* s = (Scope*)curr_scope.rsc;
   // Update existing identifier if it already exists
   // as specified by lang spec
   StoredValue* id_maybe = _scope_get_ident(s, name);
@@ -177,6 +181,11 @@ void scope_insert(StringView name, const Value* value) {
   };
 
   vector_push((*s), id);
+}
+
+void scope_insert(StringView name, const Value* value) {
+  scope_override_current();
+  scope_insert_into(curr_scope, name, value);
 }
 
 bool scope_replace(StringView name, const Value* value) {

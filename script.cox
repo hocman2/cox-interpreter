@@ -1,13 +1,12 @@
 class B {
+  setValue(val) {
+    this.val = val;
+    return this;
+  }
   printsmth() {
-    print "smth";
+    print this.val;
   }
 }
 
-class A {
-  getBInst() {
-    return B();
-  }
-}
-
-A().getBInst().printsmth();
+var method = B().setValue(5).printsmth;
+method();

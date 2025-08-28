@@ -24,8 +24,10 @@ struct Scope {
 };
 
 ScopeRef scope_ref_get_current();
+ScopeRef scope_create();
 void scope_new();
 void scope_swap(ScopeRef new);
+void scope_insert_into(ScopeRef scope, StringView name, const Value* value);
 void scope_insert(StringView name, const Value* value);
 bool scope_replace(StringView name, const Value* value);
 ValueRef scope_get_val_ref(StringView name);

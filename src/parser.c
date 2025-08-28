@@ -305,6 +305,13 @@ static Expression* parse_primary(struct TokensCursor* cursor) {
           expr->evaluated = value_new_nil();
           advance(cursor);
           break;
+        
+        // Special treatement for this keyword, its treated as an identifier
+        case RESERVED_KEYWORD_THIS:
+          expr->type = EXPRESSION_LITERAL;
+          expr->literal = *token;
+          advance(cursor);
+          break;
         default:
           syntax_error(token, "Unexpected keyword "SV_Fmt, SV_Fmt_arg(token->lexeme));
           set_panic(cursor);

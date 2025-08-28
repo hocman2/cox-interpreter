@@ -118,9 +118,9 @@ Value value_new_bool(bool val);
 Value value_new_err();
 Value value_new_nil();
 Value value_new_fun(Statement* body, const StringView* params, size_t num_params, ScopeRef capture);
-ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl, StringView this_kw);
+ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl);
 Value value_new_class(StringView name, ClassMethods methods);
-Value value_new_instance(Value* class);
+Value value_new_instance(Value* class, StringView this_kw);
 
 Value value_copy(const Value* v);
 void value_scopeexit(Value* v);
