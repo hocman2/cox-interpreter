@@ -3,13 +3,25 @@
 #include <assert.h>
 #endif
 
-struct RcBlockAlloc rc_blocks[MAX_RC_BLOCKS] = {0};
+struct RcBlockAlloc rc_blocks[MAX_RC_BLOCKS];
 
 RcBlock* _rc_new_impl(void (*free_fn)(void*)) {
+  static bool rc_blocks_init = false;
+  if (!rc_blocks_init) {
+    for (size_t i = 0; i < MAX_RC_BLOCKS; ++i) {
+      rc_blocks[i].block = (RcBlock){0, NULL};
+      rc_blocks[i].in_use = false;
+    }
+    rc_blocks_init = true;
+  }
+
   RcBlock* block = NULL;
   for (size_t i = 0; i < MAX_RC_BLOCKS; ++i) {
-    if (rc_blocks[i].in_use) continue;
-    block = &rc_blocks[i].block;
+    if (!rc_blocks[i].in_use) {
+      rc_blocks[i].in_use = true;
+      block = &rc_blocks[i].block;
+      break;
+    }
   }
 
 #ifdef _DEBUG
@@ -40,6 +52,7 @@ void _rc_release_impl(void* rsc, RcBlock* rc) {
     for (size_t i = 0; i < MAX_RC_BLOCKS; ++i) {
       if (&rc_blocks[i].block == rc) {
         rc_blocks[i].in_use = false;
+        break;
       }
     }
   }
