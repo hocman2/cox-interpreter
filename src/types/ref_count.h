@@ -10,8 +10,12 @@ typedef struct {
   void (*free_fn)(void*);
 } RcBlock;
 
-extern RcBlock rc_blocks[MAX_RC_BLOCKS];
-extern size_t  num_rc_blocks;
+struct RcBlockAlloc {
+  RcBlock block;
+  bool in_use;
+};
+
+extern struct RcBlockAlloc rc_blocks[MAX_RC_BLOCKS];
 
 #define rc_new(r, free_fn, outref) do { \
   (outref)->rc = _rc_new_impl(free_fn); \

@@ -3,16 +3,18 @@
 #include <assert.h>
 #endif
 
-RcBlock rc_blocks[MAX_RC_BLOCKS] = {0};
-size_t num_rc_blocks = 0;
+struct RcBlockAlloc rc_blocks[MAX_RC_BLOCKS] = {0};
 
 RcBlock* _rc_new_impl(void (*free_fn)(void*)) {
-#ifdef _DEBUG
-  assert(num_rc_blocks < MAX_RC_BLOCKS && "Max Ref count blocks allocated");
-#endif
+  RcBlock* block = NULL;
+  for (size_t i = 0; i < MAX_RC_BLOCKS; ++i) {
+    if (rc_blocks[i].in_use) continue;
+    block = &rc_blocks[i].block;
+  }
 
-  RcBlock* block = rc_blocks + num_rc_blocks;
-  num_rc_blocks += 1;
+#ifdef _DEBUG
+  assert(block && "Max ref count blocks allocated");
+#endif
 
   block->free_fn = free_fn;
   block->count = 1;
@@ -35,5 +37,10 @@ void _rc_release_impl(void* rsc, RcBlock* rc) {
   rc->count -= 1;
   if (rc->count == 0) {
     rc->free_fn(rsc);
+    for (size_t i = 0; i < MAX_RC_BLOCKS; ++i) {
+      if (&rc_blocks[i].block == rc) {
+        rc_blocks[i].in_use = false;
+      }
+    }
   }
 }
