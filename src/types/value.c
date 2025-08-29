@@ -276,6 +276,17 @@ Value value_new_instance(Value* class, StringView this_kw) {
   return e;
 }
 
+Value instance_find_property(const Value* instance, const char* name) {
+  for (size_t i = 0; i < instance->instancevalue.rsc->properties.count; ++i) {
+    const struct InstanceProperty* prop = instance->instancevalue.rsc->properties.xs + i;
+    if (strncmp(prop->identifier.str, name, prop->identifier.len) == 0) {
+      return value_copy(&prop->value);
+    }
+  }
+
+  return value_new_nil();
+}
+
 Value value_copy(const Value* v) {
   switch (v->type) {
     case EVAL_TYPE_FUN: {

@@ -121,6 +121,7 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
 ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl);
 Value value_new_class(StringView name, ClassMethods methods);
 Value value_new_instance(Value* class, StringView this_kw);
+Value instance_find_property(const Value* instance, const char* name);
 
 Value value_copy(const Value* v);
 void value_scopeexit(Value* v);
