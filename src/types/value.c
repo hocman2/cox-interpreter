@@ -2,6 +2,7 @@
 #include "ref_count.h"
 #include "allocators/pool.h"
 #include "statements.h"
+#include "../error/runtime.h"
 #include "../interpreter/scope.h"
 
 // All of this complex machinery allows us to define type conversions rather easily
@@ -136,10 +137,12 @@ bool convert_to(Value* e, enum ValueType to_type) {
 
 static Pool class_pool; 
 static Pool instance_pool; 
+static StringView this_kw;
 
-void value_init(size_t num_classes, size_t num_instances) {
+void value_init(size_t num_classes, size_t num_instances, StringView this_keyword) {
   pool_new(&class_pool, sizeof(struct ClassValue), num_classes);
   pool_new(&instance_pool, sizeof(struct InstanceValue), num_instances);
+  this_kw = this_keyword;
 }
 
 void value_free() {
@@ -181,7 +184,7 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
 
   Value e;
   e.type = EVAL_TYPE_FUN;
-  e.fnvalue = (struct FunctionValue){
+  e.fnvalue = (FunctionValue){
     .params = {0},
     .body = body,
   };
@@ -194,19 +197,6 @@ Value value_new_fun(Statement* body, const StringView* params, size_t num_params
   }
 
   return e; 
-}
-
-Value value_fun_change_capture(const Value* fun, ScopeRef new_capture) {
-  Value new;
-  new.type = EVAL_TYPE_FUN;
-  new.fnvalue = (struct FunctionValue) {
-    .params = fun->fnvalue.params,
-    .body = fun->fnvalue.body,
-  };
-
-  rc_move(&new.fnvalue.capture, &new_capture);
-
-  return new;
 }
 
 void class_free(void* rsc) {
@@ -227,11 +217,11 @@ Value value_new_class(StringView name, ClassMethods methods) {
   for (size_t i = 0; i < methods.count; ++i) {
     const ClassMethod* m = methods.xs + i;
     assert(m->method.type == EVAL_TYPE_FUN && "Method value is not a function type");
-    ClassMethod method = {m->identifier, value_copy(&m->method)};
+    ClassMethod method = {m->identifier, m->method};
     vector_push(class->methods, method);
   }
 
-  struct ClassRef classref;
+  ClassRef classref;
   rc_new(class, class_free, &classref);
 
   Value e;
@@ -243,16 +233,18 @@ Value value_new_class(StringView name, ClassMethods methods) {
 
 void instance_free(void* rsc) {
   struct InstanceValue* inst = (struct InstanceValue*)rsc;
+
   for (size_t i = 0; i < inst->properties.count; ++i) {
     struct InstanceProperty* prop = inst->properties.xs + i;
     value_scopeexit(&prop->value);
   }
-  rc_release(&inst->class);
   vector_free(inst->properties);
+
+  rc_release(&inst->class);
   pool_free(&instance_pool, rsc);
 }
 
-Value value_new_instance(Value* class, StringView this_kw) {
+Value value_new_instance(Value* class) {
   assert(class->type == EVAL_TYPE_CLASS && "Attempted to instanciate a class but passed value is not a Class");
   
   struct InstanceValue* instance;
@@ -264,34 +256,77 @@ Value value_new_instance(Value* class, StringView this_kw) {
   e.type = EVAL_TYPE_INSTANCE;
   rc_new(instance, instance_free, &e.instancevalue); 
 
-  ScopeRef capture = scope_create();
-  scope_insert_into(capture, this_kw, &e);
-  for (size_t i = 0; i < class->classvalue.rsc->methods.count; ++i) {
-    ClassMethod* method = class->classvalue.rsc->methods.xs + i;
-    Value instance_captured = value_fun_change_capture(&method->method, capture);
-    struct InstanceProperty prop = {.identifier = method->identifier, .value = instance_captured};
-    vector_push(instance->properties, prop);
-  }
-
   return e;
 }
 
-Value instance_find_property(const Value* instance, const char* name) {
+Value instance_method_set_capture(const Value* fun, ScopeRef new_capture) {
+  Value new;
+  new.type = EVAL_TYPE_FUN;
+  new.fnvalue = (FunctionValue) {
+    .params = fun->fnvalue.params,
+    .body = fun->fnvalue.body,
+  };
+
+  rc_acquire(new_capture, &new.fnvalue.capture);
+
+  return new;
+}
+
+
+Value instance_find_property(const Value* instance, StringView name) {
+#ifdef _DEBUG
+  assert(instance != NULL && "Attempted to find property on NULL instance");
+  assert(instance->type == EVAL_TYPE_INSTANCE && "Attempted to find property on non-instance");
+#endif
+
   for (size_t i = 0; i < instance->instancevalue.rsc->properties.count; ++i) {
-    const struct InstanceProperty* prop = instance->instancevalue.rsc->properties.xs + i;
-    if (strncmp(prop->identifier.str, name, prop->identifier.len) == 0) {
+    const struct InstanceProperty* prop = 
+      instance->instancevalue.rsc->properties.xs + i;
+
+    if (strncmp(prop->identifier.str, name.str, prop->identifier.len) == 0) {
       return value_copy(&prop->value);
+    }
+  }
+
+  // Look for method
+  struct ClassValue* class = instance->instancevalue.rsc->class.rsc;
+  for (size_t i = 0; i < class->methods.count; ++i) {
+    ClassMethod* method = class->methods.xs + i;
+
+    if (strncmp(method->identifier.str, name.str, method->identifier.len) == 0) {
+      ScopeRef instance_capture = scope_create();
+      scope_insert_into(instance_capture, this_kw, instance);
+      Value ret = instance_method_set_capture(&method->method, instance_capture);
+      rc_release(&instance_capture);
+      return ret;
     }
   }
 
   return value_new_nil();
 }
 
+void instance_set_property(Value* instance, StringView name, const Value* insert) {
+  for (size_t i = 0; i < instance->instancevalue.rsc->properties.count; ++i) {
+    struct InstanceProperty* prop = instance->instancevalue.rsc->properties.xs + i;
+    if (strncmp(prop->identifier.str, name.str, prop->identifier.len) == 0) {
+      prop->value = value_copy(insert);
+      return;
+    }
+  }
+
+  struct InstanceProperty new_prop = {
+    .identifier = name,
+    .value = value_copy(insert),
+  };
+
+  vector_push(instance->instancevalue.rsc->properties, new_prop);
+}
+
 Value value_copy(const Value* v) {
   switch (v->type) {
     case EVAL_TYPE_FUN: {
       Value fn = *v;
-      rc_acquire(v->fnvalue.capture, &(fn.fnvalue.capture));
+      fn.fnvalue.capture = scope_ref_acquire(v->fnvalue.capture);
       return fn;
     }
     break;
@@ -330,8 +365,9 @@ ClassMethods build_class_methods(struct ClassMethodsDecl methods_decl) {
 
 void value_scopeexit(Value* v) {
   switch (v->type) {
-    case EVAL_TYPE_FUN:
+    case EVAL_TYPE_FUN: {
       rc_release(&v->fnvalue.capture);
+    }
     break;
     case EVAL_TYPE_CLASS:
       rc_release(&v->classvalue);

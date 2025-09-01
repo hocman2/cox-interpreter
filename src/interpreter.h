@@ -15,8 +15,7 @@ struct PendingReturn {
 
 typedef struct {
   struct PendingReturn pending_return;
-  StringView this_kw;
-  Value ctx_subject;
+  Value get_target;
 } Interpreter;
 
 void evaluation_pretty_print(Value* e);

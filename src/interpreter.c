@@ -28,21 +28,24 @@ static bool should_return() {
   return interpreter.pending_return.should_return && interpreter.pending_return.await_return;
 }
 
-void discard_context_subject() {
-  value_scopeexit(&interpreter.ctx_subject);
-  interpreter.ctx_subject = value_new_nil();
+bool has_get_target() {
+  return interpreter.get_target.type != EVAL_TYPE_NIL;
 }
-bool has_context_subject() {
-  return interpreter.ctx_subject.type != EVAL_TYPE_NIL;
-}
-void set_context_subject(Value subject) {
-  if (has_context_subject())
-    discard_context_subject();
 
-  interpreter.ctx_subject = subject;
+void discard_get_target() {
+  value_scopeexit(&interpreter.get_target);
+  interpreter.get_target = value_new_nil();
+}
+
+void set_get_target(Value* v) {
+  if (has_get_target()) {
+    discard_get_target();
+  }
+  interpreter.get_target = *v;
 }
 
 static Value evaluate_expression(Expression* expr);
+static Value evaluate_expression_call(Expression* expr);
 static void evaluate_statement(Statement* stmt);
 static void evaluate_statement_block(Statement* stmt);
 
@@ -78,7 +81,7 @@ static Value evaluate_expression_group(Expression* expr) {
 
 static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
   // Check arguments arity
-  struct FunctionValue* fn = &fnvalue->fnvalue;
+  FunctionValue* fn = &fnvalue->fnvalue;
   size_t arg_count = callexpr->call.args.count;
   size_t params_count = fn->params.count;
 
@@ -102,14 +105,26 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
     return value_new_err();
   }
 
+  // Evaluate args first
+  struct Args {
+    size_t count;
+    size_t capacity;
+    Value* xs;
+  } args;
+  vector_new(args, fn->params.count);
+  for (size_t i = 0; i < fn->params.count; ++i) {
+    vector_push(args, evaluate_expression(callexpr->call.args.xs[i]));
+  }
+  // Swap to function scope and bind args
   scope_swap(fn->capture);
   scope_new();
-
+  ScopeRef arg_scope = scope_ref_get_current();
   for (size_t i = 0; i < fn->params.count; ++i) {
     StringView param_name = fn->params.xs[i];
-    Value arg = evaluate_expression(callexpr->call.args.xs[i]);
-    scope_insert(param_name, &arg);
+    scope_insert_into(arg_scope, param_name, args.xs + i);
   }
+  rc_release(&arg_scope);
+  vector_free(args);
 
   interpreter.pending_return.await_return = true;
   evaluate_statement_block(fn->body);
@@ -120,17 +135,39 @@ static Value evaluate_expression_call_fn(Value* fnvalue, Expression* callexpr) {
   return ret;
 }
 
-static Value evaluate_expression_call_class(Value* classvalue, Expression* _callexpr) {
-  return value_new_instance(classvalue, interpreter.this_kw);
+static Value evaluate_expression_call_class(Value* classvalue, Expression* callexpr) {
+  Value instance = value_new_instance(classvalue);
+
+  Value constructor = instance_find_property(&instance, sv_new("constructor"));
+  if (constructor.type == EVAL_TYPE_FUN) {
+    Expression constructor_callee;
+    constructor_callee.type = EXPRESSION_STATIC;
+    constructor_callee.evaluated = constructor;
+
+    Expression constructor_call;
+    constructor_call.type = EXPRESSION_CALL;
+    constructor_call.call.callee = &constructor_callee;
+    constructor_call.call.open_paren = callexpr->call.open_paren;
+    constructor_call.call.args = callexpr->call.args;
+
+    evaluate_expression_call(&constructor_call);
+  }
+  value_scopeexit(&constructor);
+
+  return instance;
 }
 
 static Value evaluate_expression_call(Expression* expr) {
   Value calleeval_evaluated;
   Value* calleeval; 
+  bool clean_callee = false;
   Expression* callee_expr = expr->call.callee;
 
   // Resolve the callee as a scope value or an callable expression
-  if (
+  if (callee_expr->type == EXPRESSION_STATIC) {
+    calleeval = &callee_expr->evaluated;
+  }
+  else if (
     callee_expr->type == EXPRESSION_LITERAL && 
     callee_expr->literal.type == TOKEN_TYPE_IDENTIFIER
   ) {
@@ -142,39 +179,42 @@ static Value evaluate_expression_call(Expression* expr) {
   } else {
     calleeval_evaluated = evaluate_expression(callee_expr);
     calleeval = &calleeval_evaluated;
+    clean_callee = true;
   }
 
+  Value ret = value_new_nil();
   switch (calleeval->type) {
     case EVAL_TYPE_FUN:
-      return evaluate_expression_call_fn(calleeval, expr);
+      ret = evaluate_expression_call_fn(calleeval, expr);
       break;
     case EVAL_TYPE_CLASS:
-      return evaluate_expression_call_class(calleeval, expr);
+      ret = evaluate_expression_call_class(calleeval, expr);
       break;
     default:
       runtime_error(find_token(callee_expr), "Cannot resolve callee as callable");
-      return value_new_err();
+      ret = value_new_err();
   }
+
+  if (clean_callee) {
+    value_scopeexit(calleeval);
+  }
+
+  return ret;
 }
 
 Value evaluate_expression_get(Expression* expr) {
   Value object = evaluate_expression(expr->get.object);
   if (object.type != EVAL_TYPE_INSTANCE) {
     runtime_error(find_token(expr), "Get accessor must be used on instances");
+    value_scopeexit(&object);
     return value_new_err();
   }
 
   StringView looking_for = expr->get.name.lexeme;
-  Value retval = value_new_nil();
-  for (size_t i = 0; i < object.instancevalue.rsc->properties.count; ++i) {
-    struct InstanceProperty* prop = object.instancevalue.rsc->properties.xs + i; 
-    if (strncmp(prop->identifier.str, looking_for.str, looking_for.len) == 0) {
-      retval = value_copy(&prop->value);
-      break;
-    }
-  }
+  Value retval = instance_find_property(&object, looking_for);
 
-  set_context_subject(object);
+  set_get_target(&object);
+
   return retval;
 }
 
@@ -186,24 +226,9 @@ Value evaluate_expression_set(Expression* expr) {
   }
 
   Value right = evaluate_expression(expr->set.right);
-
-  StringView looking_for = expr->set.name.lexeme;
-  bool found_prop = false;
-  for (size_t i = 0; i < object.instancevalue.rsc->properties.count; ++i) {
-    struct InstanceProperty* prop = object.instancevalue.rsc->properties.xs + i;
-    if (strncmp(prop->identifier.str, looking_for.str, looking_for.len) == 0) {
-      prop->value = right;
-      found_prop = true;
-      break;
-    }
-  }
-
-  if (found_prop) {
-    return object;
-  }
-
-  struct InstanceProperty new_prop = {.identifier = expr->set.name.lexeme, .value = right};
-  vector_push(object.instancevalue.rsc->properties, new_prop);
+  StringView name = expr->set.name.lexeme;
+  instance_set_property(&object, name, &right);
+  value_scopeexit(&right);
 
   return object;
 }
@@ -470,7 +495,6 @@ static Value evaluate_expression(Expression* expr) {
 
 static void evaluate_statement_expr(Statement* stmt) {
   Value v = evaluate_expression(stmt->expr);
-
   value_scopeexit(&v);
 }
 
@@ -543,7 +567,11 @@ static void evaluate_statement_while(Statement* stmt) {
 
   bool iterate = e.bvalue;
   while (iterate) {
+    printf("=== BEGIN ===\n");
+    print_rc_blocks();
     evaluate_statement(stmt->while_loop.body);
+    print_rc_blocks();
+    printf("=== END ===\n");
 
     value_scopeexit(&e);
     e = evaluate_expression(stmt->while_loop.condition);
@@ -612,19 +640,18 @@ static void evaluate_statement(Statement* stmt) {
     break;
   }
 
-  if (has_context_subject()) {
-    discard_context_subject();
+  if (has_get_target()) {
+    discard_get_target();
   }
 }
 
 void init_interpreter() {
-  value_init(NUM_CLASSES, NUM_INSTANCES);
-  interpreter.pending_return = (struct PendingReturn){value_new_nil(), false, false};
-  interpreter.ctx_subject = value_new_nil();
-
   const char* this = keyword_to_string(RESERVED_KEYWORD_THIS);
   assert(this && "Unable to get string value of RESERVED_KEYWORD_THIS"); 
-  interpreter.this_kw = sv_new(this);
+  value_init(NUM_CLASSES, NUM_INSTANCES, sv_new(this));
+
+  interpreter.pending_return = (struct PendingReturn){value_new_nil(), false, false};
+  interpreter.get_target = value_new_nil();
 }
 
 void interpret(Statements stmts) {

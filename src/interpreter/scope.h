@@ -15,6 +15,7 @@ typedef struct {
 typedef struct Scope Scope;
 struct Scope {
   uint64_t id;
+  bool released_values;
   ScopeRef upper;
 
   // dynamic array data for storedvalues, should be in its own datastructure
@@ -25,9 +26,11 @@ struct Scope {
 
 ScopeRef scope_ref_get_current();
 ScopeRef scope_create();
+ScopeRef scope_ref_acquire(ScopeRef ref);
 void scope_new();
 void scope_swap(ScopeRef new);
 void scope_insert_into(ScopeRef scope, StringView name, const Value* value);
+bool scope_remove_from(ScopeRef scope, StringView name);
 void scope_insert(StringView name, const Value* value);
 bool scope_replace(StringView name, const Value* value);
 ValueRef scope_get_val_ref(StringView name);

@@ -44,10 +44,14 @@ static void scope_stats(const Scope* s) {
   }
 }
 
-ScopeRef scope_ref_get_current() { 
+ScopeRef scope_ref_acquire(ScopeRef ref) {
   ScopeRef acq;
-  rc_acquire(curr_scope, &acq);
+  rc_acquire(ref, &acq);
   return acq;
+}
+
+ScopeRef scope_ref_get_current() { 
+  return scope_ref_acquire(curr_scope);
 }
 
 ScopeRef scope_create() {
@@ -64,10 +68,14 @@ ScopeRef scope_create() {
   Scope* newscope;
   pool_alloc(&scope_alloc, (void**)&newscope);
   newscope->id = scope_ids++;
+  newscope->released_values = false;
   vector_new(*newscope, ID_INITIAL_CAP); 
+  newscope->upper.rc = NULL;
+  newscope->upper.rsc = NULL;
 
   ScopeRef new_ref;
   rc_new(newscope, scope_free, &new_ref);
+
   return new_ref;
 }
 
@@ -76,9 +84,7 @@ void scope_new() {
 
   if (curr_scope.rsc) {
     rc_move(&new_scope.rsc->upper, &curr_scope);
-  } else {
-    rc_null(&new_scope.rsc->upper);
-  }
+  } 
 
   rc_move(&curr_scope, &new_scope);
 }
@@ -139,28 +145,22 @@ static StoredValue* _scope_get_ident(Scope* s, StringView name) {
 }
 
 static void scope_override_current() {
-  Scope* newscope;
-  pool_alloc(&scope_alloc, (void**)&newscope);
-  vector_new(*newscope, curr_scope.rsc->count);
-  newscope->id = scope_ids++;
+  ScopeRef new_scope = scope_create();
 
   if (curr_scope.rsc->upper.rsc) {
-    rc_acquire(curr_scope.rsc->upper, &(newscope->upper));
+    rc_move(&new_scope.rsc->upper, &curr_scope.rsc->upper);
   } else {
-    rc_null(&(newscope->upper));
+    rc_null(&new_scope.rsc->upper);
   }
 
   for (size_t i = 0; i < curr_scope.rsc->count; ++i) {
     StoredValue* val = curr_scope.rsc->xs + i;
-    vector_push(*newscope, ((StoredValue){val->name, value_copy(&val->value)}));
+    vector_push(*new_scope.rsc, ((StoredValue){val->name, value_copy(&val->value)}));
   }
-
-  ScopeRef new_ref;
-  rc_new(newscope, scope_free, &new_ref);
 
   ScopeRef old;
   rc_move(&old, &curr_scope);
-  rc_move(&curr_scope, &new_ref);
+  rc_move(&curr_scope, &new_scope);
   rc_release(&old);
 }
 
@@ -181,6 +181,26 @@ void scope_insert_into(ScopeRef scope, StringView name, const Value* value) {
   };
 
   vector_push((*s), id);
+}
+
+bool scope_remove_from(ScopeRef scope, StringView name) {
+  bool should_remove = false;
+  size_t remove_idx = 0;
+  for (size_t i = 0; i < scope.rsc->count; ++i) {
+    StoredValue* v = scope.rsc->xs + i;
+    if (strncmp(v->name.str, name.str, name.len) == 0) {
+      remove_idx = i;
+      should_remove = true;
+      value_scopeexit(&v->value);
+      break;
+    }
+  }
+
+  if (should_remove) {
+    vector_remove(*scope.rsc, remove_idx);
+  }
+
+  return should_remove;
 }
 
 void scope_insert(StringView name, const Value* value) {
@@ -213,15 +233,22 @@ ValueRef scope_get_val_ref(StringView name) {
 Value scope_get_val_copy(StringView name) {
   Scope* s = (Scope*)curr_scope.rsc;
   StoredValue* id = _scope_get_ident_recursive(s, name);
-  if (id) return value_copy(&id->value);
+  if (id) { 
+    return value_copy(&id->value);
+  }
   else return value_new_err();
 }
 
-void scope_pop() {
-  for (size_t i = 0; i < curr_scope.rsc->count; ++i) {
-    StoredValue* v = curr_scope.rsc->xs + i;
+void scope_release_values(const Scope* scope) {
+  for (size_t i = 0; i < scope->count; ++i) {
+    StoredValue* v = scope->xs + i;
     value_scopeexit(&v->value);
   }
+}
+
+void scope_pop() {
+  scope_release_values(curr_scope.rsc);
+  curr_scope.rsc->released_values = true;
 
   if (!curr_scope.rsc->upper.rsc) {
     // Global scope is popped, force the free
@@ -230,7 +257,7 @@ void scope_pop() {
     pool_freeall(&scope_alloc);
   } else {
     ScopeRef upper;
-    rc_acquire(curr_scope.rsc->upper, &upper);
+    rc_move(&upper, &curr_scope.rsc->upper);
     rc_release(&curr_scope);
     rc_move(&curr_scope, &upper);
   }
@@ -240,6 +267,11 @@ void scope_free(void* scope) {
   Scope* s = (Scope*)scope;
   if (!s) return;
   if (s->upper.rsc) rc_release(&s->upper);
+
+  if (!s->released_values) {
+    scope_release_values(s);
+  }
+
   pool_free(&scope_alloc, s);
   vector_free(*s);
 }

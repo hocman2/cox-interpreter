@@ -2,6 +2,8 @@
 #define _VECTOR_H
 
 #include <stdlib.h>
+#include <string.h>
+#include <assert.h>
 
 #define vector_new(v, cap) \
 do { \
@@ -27,6 +29,15 @@ do { \
 
 #define vector_pop(v) \
 do { \
+  (v).count -= 1; \
+} while (0)
+
+#define vector_remove(v, idx) do { \
+  assert((idx) < (v).count && "Attempted to vector_remove with index overflow"); \
+  for (size_t i = (idx) + 1; i < (v).count; ++i) { \
+    void* shift_place = (void*)((v).xs + i - 1); \
+    memmove(shift_place, (v).xs+i, sizeof(*(v).xs)); \
+  } \
   (v).count -= 1; \
 } while (0)
 

@@ -1,12 +1,23 @@
-class B {
-  setValue(val) {
-    this.val = val;
-    return this;
+class A {
+  constructor(message) {
+    this.message = message;
   }
-  printsmth() {
-    print this.val;
+
+  printMsg() {
+    print this.message;
   }
 }
 
-var method = B().setValue(5).printsmth;
-method();
+class B {
+  constructor(message) {
+    this.message = message;
+  }
+
+  getAInstance() {
+    return A(this.message);
+  }
+}
+
+for (var i = 0; i < 10; i = i + 1) {
+  B(i).getAInstance().printMsg();
+}
