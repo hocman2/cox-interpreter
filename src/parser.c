@@ -306,8 +306,9 @@ static Expression* parse_primary(struct TokensCursor* cursor) {
           advance(cursor);
           break;
         
-        // Special treatement for this keyword, its treated as an identifier
+        // Special treatement for these keywords treated as identifiers
         case RESERVED_KEYWORD_THIS:
+        case RESERVED_KEYWORD_SUPER:
           expr->type = EXPRESSION_LITERAL;
           expr->literal = *token;
           advance(cursor);
@@ -624,7 +625,16 @@ static Statement* parse_statement_class_decl(struct TokensCursor* cursor) {
 
   Statement* stmt = arena_alloc(&parser.alloc, sizeof(Statement));
   stmt->type = STATEMENT_CLASS_DECL;
+  stmt->class_decl.super = NULL;
   stmt->class_decl.identifier = identifier->lexeme;
+
+  if (token_at(cursor)->type == TOKEN_TYPE_LESS) {
+    advance(cursor);
+    Token* identifier = consume(cursor, TOKEN_TYPE_IDENTIFIER, "Expected identifier after inheritence symbol");
+    stmt->class_decl.super = arena_alloc(&parser.alloc, sizeof(Expression));
+    stmt->class_decl.super->type = EXPRESSION_LITERAL;
+    stmt->class_decl.super->literal = *identifier;
+  }
 
   consume(cursor, TOKEN_TYPE_LEFT_BRACE, "Missing opening brace '{' after class identifier");
   vector_new(stmt->class_decl.methods_decl, 1);
@@ -975,6 +985,9 @@ void statement_pretty_print(Statement* stmt) {
     break;
     case STATEMENT_CLASS_DECL:
       printf("STATEMENT CLASS \""SV_Fmt"\" DECLARATION:\n", SV_Fmt_arg(stmt->class_decl.identifier));
+      if (stmt->class_decl.super) {
+        printf("SUPER: \""SV_Fmt"\"\n", SV_Fmt_arg(stmt->class_decl.super->literal.lexeme)); 
+      }
       for (size_t i = 0; i < stmt->class_decl.methods_decl.count; ++i) {
         StatementMethodDecl* method = stmt->class_decl.methods_decl.xs + i;
         printf("\t(Identifier => "SV_Fmt" ; Params => ", SV_Fmt_arg(method->identifier));

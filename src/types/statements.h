@@ -54,6 +54,7 @@ struct ClassMethodsDecl {
 
 struct StatementClassDecl {
   StringView identifier;
+  Expression* super;
   struct ClassMethodsDecl methods_decl;
 };
 
