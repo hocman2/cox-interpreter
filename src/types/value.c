@@ -138,11 +138,13 @@ bool convert_to(Value* e, enum ValueType to_type) {
 static Pool class_pool; 
 static Pool instance_pool; 
 static StringView this_kw;
+static StringView super_kw;
 
-void value_init(size_t num_classes, size_t num_instances, StringView this_keyword) {
+void value_init(size_t num_classes, size_t num_instances, StringView this_keyword, StringView super_keyword) {
   pool_new(&class_pool, sizeof(struct ClassValue), num_classes);
   pool_new(&instance_pool, sizeof(struct InstanceValue), num_instances);
   this_kw = this_keyword;
+  super_kw = super_keyword;
 }
 
 void value_free() {
@@ -209,10 +211,16 @@ void class_free(void* rsc) {
   pool_free(&class_pool, rsc);
 }
 
-Value value_new_class(StringView name, ClassMethods methods) {
+Value value_new_class(StringView name, ClassMethods methods, const Value* super) {
   struct ClassValue* class; 
   pool_alloc(&class_pool, (void**)&class);
   class->name = name;
+  if (super) {
+    rc_acquire(super->classvalue, &class->super);
+  } else {
+    rc_null(&class->super);
+  }
+
   vector_new(class->methods, methods.count);
   for (size_t i = 0; i < methods.count; ++i) {
     const ClassMethod* m = methods.xs + i;
@@ -244,13 +252,25 @@ void instance_free(void* rsc) {
   pool_free(&instance_pool, rsc);
 }
 
-Value value_new_instance(Value* class) {
+Value value_new_instance(const Value* class) {
   assert(class->type == EVAL_TYPE_CLASS && "Attempted to instanciate a class but passed value is not a Class");
   
   struct InstanceValue* instance;
   pool_alloc(&instance_pool, (void**)&instance);
   rc_acquire(class->classvalue, &(instance->class));
   vector_new(instance->properties, 1);
+
+  if (class->classvalue.rsc->super.rsc) {
+    Value superclass_wrap = {EVAL_TYPE_CLASS};
+    rc_acquire(class->classvalue.rsc->super, &superclass_wrap.classvalue);
+
+    Value super = value_new_instance(&superclass_wrap);
+    rc_move(&instance->super, &super.instancevalue);
+
+    rc_release(&superclass_wrap.classvalue);
+  } else {
+    rc_null(&instance->super);
+  }
 
   Value e;
   e.type = EVAL_TYPE_INSTANCE;
@@ -279,6 +299,8 @@ Value instance_find_property(const Value* instance, StringView name) {
   assert(instance->type == EVAL_TYPE_INSTANCE && "Attempted to find property on non-instance");
 #endif
 
+  bool has_super = instance->instancevalue.rsc->super.rsc != NULL;
+
   for (size_t i = 0; i < instance->instancevalue.rsc->properties.count; ++i) {
     const struct InstanceProperty* prop = 
       instance->instancevalue.rsc->properties.xs + i;
@@ -297,10 +319,26 @@ Value instance_find_property(const Value* instance, StringView name) {
       ScopeRef instance_capture = scope_create();
       scope_set_upper(instance_capture, scope_ref_get_current());
       scope_insert_into(instance_capture, this_kw, instance);
+
+      if (has_super) {
+        Value superinstance_wrap = {EVAL_TYPE_INSTANCE};
+        rc_acquire(instance->instancevalue.rsc->super, &superinstance_wrap.instancevalue);
+        scope_insert_into(instance_capture, super_kw, &superinstance_wrap);
+        rc_release(&superinstance_wrap.instancevalue);
+      }
+
       Value ret = instance_method_set_capture(&method->method, instance_capture);
       rc_release(&instance_capture);
       return ret;
     }
+  }
+
+  if (has_super) {
+    Value superinstance_wrap = {EVAL_TYPE_INSTANCE};
+    rc_acquire(instance->instancevalue.rsc->super, &superinstance_wrap.instancevalue);
+    Value ret = instance_find_property(&superinstance_wrap, name);
+    rc_release(&superinstance_wrap.instancevalue);
+    return ret;
   }
 
   return value_new_nil();

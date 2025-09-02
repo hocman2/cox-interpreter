@@ -448,6 +448,7 @@ static Value evaluate_expression(Expression* expr) {
         break;
         case TOKEN_TYPE_KEYWORD:
           switch(expr->literal.keyword) {
+            case RESERVED_KEYWORD_SUPER:
             case RESERVED_KEYWORD_THIS: {
               Value val = scope_get_val_copy(expr->literal.lexeme);
               if (val.type == EVAL_TYPE_ERR) {
@@ -456,18 +457,16 @@ static Value evaluate_expression(Expression* expr) {
               }
               return val;
             }
-            case RESERVED_KEYWORD_TRUE:
-              {
+            case RESERVED_KEYWORD_TRUE: {
                 Value e = {EVAL_TYPE_BOOL};
                 e.bvalue = true;
                 return e;
-              }
-            case RESERVED_KEYWORD_FALSE:
-              {
+            }
+            case RESERVED_KEYWORD_FALSE: {
                 Value e = {EVAL_TYPE_BOOL};
                 e.bvalue = false;
                 return e;
-              }
+            }
             case RESERVED_KEYWORD_NIL:
                 return (Value){EVAL_TYPE_NIL};
             default:
@@ -567,11 +566,7 @@ static void evaluate_statement_while(Statement* stmt) {
 
   bool iterate = e.bvalue;
   while (iterate) {
-    printf("=== BEGIN ===\n");
-    print_rc_blocks();
     evaluate_statement(stmt->while_loop.body);
-    print_rc_blocks();
-    printf("=== END ===\n");
 
     value_scopeexit(&e);
     e = evaluate_expression(stmt->while_loop.condition);
@@ -590,12 +585,29 @@ cleanup:
 }
 
 static void evaluate_statement_class_decl(Statement* stmt) {
+  StringView identifier = stmt->class_decl.identifier;
+
+  Value* super = NULL;
+  if (stmt->class_decl.super) {
+    if (strncmp(identifier.str, stmt->class_decl.super->literal.lexeme.str, identifier.len) == 0) {
+      runtime_error(&stmt->class_decl.super->literal, "A class can't inherit from itself");
+      return;
+    }
+
+    super = scope_get_val_ref(stmt->class_decl.super->literal.lexeme);
+    if (!super) {
+        runtime_error(&stmt->class_decl.super->literal, "Can't find class \""SV_Fmt"\" to inherit from", SV_Fmt_arg(stmt->class_decl.super->literal.lexeme));
+      return;
+    } else if (super->type != EVAL_TYPE_CLASS) {
+      runtime_error(&stmt->class_decl.super->literal, "\""SV_Fmt"\" is not a class !", SV_Fmt_arg(stmt->class_decl.super->literal.lexeme));
+      return;
+    }
+  }
+
   ClassMethods methods = build_class_methods(stmt->class_decl.methods_decl);
-
-  Value class = value_new_class(stmt->class_decl.identifier, methods);
-  scope_insert(stmt->class_decl.identifier, &class);
+  Value class = value_new_class(stmt->class_decl.identifier, methods, super);
+  scope_insert(identifier, &class);
   value_scopeexit(&class);
-
   vector_free(methods);
 }
 
@@ -648,7 +660,10 @@ static void evaluate_statement(Statement* stmt) {
 void init_interpreter() {
   const char* this = keyword_to_string(RESERVED_KEYWORD_THIS);
   assert(this && "Unable to get string value of RESERVED_KEYWORD_THIS"); 
-  value_init(NUM_CLASSES, NUM_INSTANCES, sv_new(this));
+  const char* super = keyword_to_string(RESERVED_KEYWORD_SUPER);
+  assert(super && "Unable to get string value of RESERVED_KEYWORD_SUPER"); 
+
+  value_init(NUM_CLASSES, NUM_INSTANCES, sv_new(this), sv_new(super));
 
   interpreter.pending_return = (struct PendingReturn){value_new_nil(), false, false};
   interpreter.get_target = value_new_nil();

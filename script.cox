@@ -1,23 +1,27 @@
-class A {
-  constructor(message) {
-    this.message = message;
-  }
-
-  printMsg() {
-    print this.message;
+class Zero {
+  constructor() {
+    this.myValue = 3;
   }
 }
 
-class B {
-  constructor(message) {
-    this.message = message;
-  }
-
-  getAInstance() {
-    return A(this.message);
+class A < Zero {
+  constructor() {
+    super.constructor();
+    print "Hello from A";
+    print this;
   }
 }
 
-for (var i = 0; i < 10; i = i + 1) {
-  B(i).getAInstance().printMsg();
+class B < A {
+  constructor() {
+    print this.myValue;
+    super.constructor();
+    print "Hello from B";
+    print super;
+    print this;
+    print super.myValue;
+    print this.myValue;
+  }
 }
+
+B();
