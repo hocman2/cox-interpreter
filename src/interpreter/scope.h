@@ -27,6 +27,7 @@ struct Scope {
 ScopeRef scope_ref_get_current();
 ScopeRef scope_create();
 ScopeRef scope_ref_acquire(ScopeRef ref);
+void scope_set_upper(ScopeRef ref, ScopeRef upper);
 void scope_new();
 void scope_swap(ScopeRef new);
 void scope_insert_into(ScopeRef scope, StringView name, const Value* value);

@@ -295,6 +295,7 @@ Value instance_find_property(const Value* instance, StringView name) {
 
     if (strncmp(method->identifier.str, name.str, method->identifier.len) == 0) {
       ScopeRef instance_capture = scope_create();
+      scope_set_upper(instance_capture, scope_ref_get_current());
       scope_insert_into(instance_capture, this_kw, instance);
       Value ret = instance_method_set_capture(&method->method, instance_capture);
       rc_release(&instance_capture);

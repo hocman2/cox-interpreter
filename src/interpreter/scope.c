@@ -54,6 +54,10 @@ ScopeRef scope_ref_get_current() {
   return scope_ref_acquire(curr_scope);
 }
 
+void scope_set_upper(ScopeRef ref, ScopeRef upper) {
+  rc_move(&ref.rsc->upper, &upper);
+}
+
 ScopeRef scope_create() {
   const size_t ID_INITIAL_CAP = 10;
   const size_t SIDED_INITIAL_CAP = 16;
